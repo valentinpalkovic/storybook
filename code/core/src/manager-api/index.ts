@@ -1,3 +1,4 @@
+// no-op touch: verify-harness A4 label-fire test (fork)
 export * from './root.tsx';
 
 export { UniversalStore as experimental_UniversalStore } from '../shared/universal-store/index.ts';
