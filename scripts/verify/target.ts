@@ -1,4 +1,5 @@
 // Parses the `@verify-target` header from a Playwright recipe spec file.
+// v6 firetest round 1 — marker comment, safe to delete.
 //
 // Recipe header convention (scanned in the first 30 lines):
 //
