@@ -30,7 +30,13 @@ jobs:
       - name: Checkout base
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          # `pull_request.base.sha` is captured at PR creation / sync and lags
+          # behind the actual base-branch tip when the base advances independently
+          # of the PR head. The harness depends on always-latest trusted scripts
+          # (verify-pr-generate flags, deny-regex, lint config) so we pin to the
+          # branch ref instead — pull_request_target keeps execution on trusted
+          # workflow + script content either way.
+          ref: ${{ github.event.pull_request.base.ref }}
       - name: Setup Node.js and Install Dependencies
         uses: ./.github/actions/setup-node-and-install
         with:
