@@ -247,14 +247,15 @@ const saveButton = page.getByRole('button', { name: /save changes to story|updat
 await expect(saveButton).toBeVisible({ timeout: 10000 });
 await saveButton.click();
 
-// 3. Change-detection now sees the story as MOD; ReviewChangesButton mounts.
-const reviewToggle = page.getByRole('button', { name: /review.+stories/i });
-await expect(reviewToggle).toBeVisible({ timeout: 10000 });
+// 3. Change-detection now sees the story as MOD; the review toggle mounts.
+//    NOTE: it is rendered as an aria `switch`, NOT a `button`. Match accordingly.
+const reviewToggle = page.getByRole('switch', { name: /review.+stories/i });
+await expect(reviewToggle).toBeVisible({ timeout: 15000 });
 
 // 4. Activate review mode so the *clear* button (which carries the diff's icon) renders.
 await reviewToggle.click();
-const clearButton = page.getByRole('button', { name: /clear/i });
-await expect(clearButton).toBeVisible();
+const clearButton = page.getByRole('button', { name: /^clear$/i });
+await expect(clearButton).toBeVisible({ timeout: 10000 });
 
 // 5. Screenshot the sidebar region — the new UndoIcon is inside the clear button.
 await page.locator('.sidebar-container').screenshot({
