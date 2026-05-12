@@ -226,6 +226,16 @@ jobs:
                 SLUG=$(basename "$(dirname "$f")")
                 ERROR_CTX+=$'\n\n--- page snapshot at failure ('"$SLUG"$') ---\n'
                 ERROR_CTX+=$(head -c 8000 "$f")
+                # Pair the manager page snapshot with the preview iframe a11y
+                # snapshot (when the failure-capture fixture wrote one). The
+                # iframe snapshot is the only DOM the agent's preview locators
+                # actually inspect; without it the agent can't tell why the
+                # locator timed out.
+                IF="$(dirname "$f")/iframe-snapshot.md"
+                if [ -f "$IF" ]; then
+                  ERROR_CTX+=$'\n\n--- preview iframe snapshot at failure ('"$SLUG"$') ---\n'
+                  ERROR_CTX+=$(head -c 8000 "$IF")
+                fi
               done
               # Pull the test's error message + stack from playwright-report.json
               # if available. Use --raw-output and tolerate absence.

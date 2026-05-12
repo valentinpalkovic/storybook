@@ -13,9 +13,7 @@ Emit **one file** at the path specified by the skill: `.verify-recipes/pr-<#>.sp
 Required shape:
 
 ```ts
-import { expect, test } from '@playwright/test';
-
-import { RecipePage } from './_util.ts';
+import { RecipePage, expect, test } from './_util.ts';
 
 test('<short imperative description>', async ({ page }, testInfo) => {
   // ... see rules below ...
@@ -24,7 +22,7 @@ test('<short imperative description>', async ({ page }, testInfo) => {
 
 Hard requirements:
 
-- **Imports**: ONLY `@playwright/test` and `./_util.ts`. Nothing else. No `node:*`, no `child_process`, no `fs`, no `@storybook/*`, no relative imports outside `.verify-recipes/`.
+- **Imports**: ONLY `./_util.ts` (which re-exports `expect` + a `test` extended with the harness's auto-failure-capture fixture — captures the preview iframe accessibility snapshot to `iframe-snapshot.md` so the retry loop can feed it back to the next author dispatch). Nothing else. No `node:*`, no `child_process`, no `fs`, no `@storybook/*`, no relative imports outside `.verify-recipes/`. Do not import `test` or `expect` directly from `@playwright/test`; that bypasses the failure-capture fixture.
 - **Exactly one `test(...)` call.** No `describe`, no `test.skip`, no `test.only`, no `beforeEach`/`afterEach`.
 - **`.ts` extension on relative imports** (`./_util.ts`, not `./_util`).
 - **No top-level side effects** — everything inside the `test(...)` callback.
