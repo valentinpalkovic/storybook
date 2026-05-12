@@ -43,6 +43,11 @@ Options:
                     CI (single-round) passes \$PR_HEAD_DIR/.verify-recipes/pr-<#>.spec.ts
                     so the recipe is materialised directly into the untrusted
                     PR-head workspace without ever being committed.
+  --retry-context <text>
+                    Append a "Retry guidance" section to the prompt with the
+                    given text. Used by the workflow's evidence-missing retry
+                    loop to feed the vision-checker's reasoning back to the
+                    recipe-author dispatch.
   --help            Show this help
 
 Output:
@@ -239,6 +244,7 @@ async function main(argv: string[]): Promise<number> {
       pr: { type: 'string' },
       force: { type: 'boolean', default: false },
       output: { type: 'string' },
+      'retry-context': { type: 'string' },
       help: { type: 'boolean', default: false },
     },
     strict: true,
@@ -323,7 +329,15 @@ async function main(argv: string[]): Promise<number> {
     authoringGuide,
   };
 
-  const prompt = buildRecipeAuthorPrompt(promptInput);
+  let prompt = buildRecipeAuthorPrompt(promptInput);
+
+  // Retry-loop context: when the evidence-checker rules a prior attempt's
+  // screenshots as 'missing', the workflow re-invokes verify-pr-generate
+  // with --retry-context "<vision reasoning>". Append it as a final section
+  // so the next dispatch knows what the previous spec failed to surface.
+  if (flags['retry-context']) {
+    prompt = `${prompt}\n\n---\n\n## Retry guidance — previous attempt's screenshots did not show the change\n\n${flags['retry-context']}\n\nWhen authoring this attempt, set up the UI state required to make the diff's visible change appear (see authoring-guide §8.1). If the trigger state genuinely cannot be reached from a Playwright recipe (filesystem mutation or process action recipes cannot perform), say so explicitly in a single-line comment in the spec body and keep the recipe limited to module-resolution + pageerror verification. Do NOT repeat the previous attempt's approach.`;
+  }
 
   const bundle: PromptBundle = {
     version: 1,
