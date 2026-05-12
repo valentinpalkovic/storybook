@@ -22,8 +22,9 @@
 //   }
 //
 // Exit codes:
-//   0  on `found` or `undetermined` or any non-`verified` initial verdict
-//   1  on `missing` (workflow then skips the `verified-by-harness` label)
+//   Always 0. Downstream (workflow step ordering, label gate, retry-loop)
+//   reads the rewritten verify-result.json to branch — the script does NOT
+//   drive workflow control flow via process exit.
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -173,7 +174,7 @@ async function main(rawArgv: string[]): Promise<number> {
       evidenceReasoning: 'Recipe produced no screenshots — cannot verify visible evidence.',
       evidenceModel: MODEL,
     });
-    return 1;
+    return 0;
   }
 
   if (!process.env.ANTHROPIC_API_KEY) {
@@ -268,7 +269,7 @@ async function main(rawArgv: string[]): Promise<number> {
   });
 
   console.error(`[evidence-check] verdict=${verdict} reasoning="${reasoning}"`);
-  return verdict === 'missing' ? 1 : 0;
+  return 0;
 }
 
 main(process.argv.slice(2))

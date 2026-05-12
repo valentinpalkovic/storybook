@@ -146,7 +146,7 @@ jobs:
         # diff + authored spec + screenshot images to claude-haiku-4-5 and
         # rewrites verify-result.json with {evidenceVerdict, evidenceReasoning,
         # evidenceModel}. If evidence is 'missing', final verdict is rewritten
-        # to 'evidence-missing' and the label step gates accordingly.
+        # to 'evidence-missing'; the Retry step below picks it up.
         if: success()
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -160,6 +160,76 @@ jobs:
             --result "$RESULT" \
             --diff /tmp/pr.diff \
             --recipe "$RECIPE"
+
+      - name: Retry on evidence missing
+        # Single retry when the first evidence-check ruled 'missing'. Feeds
+        # the vision reasoning back to verify-pr-generate as --retry-context,
+        # which appends a "Retry guidance" section to the prompt; the author
+        # re-dispatches under the same scoped API key. The retried recipe
+        # is materialised at the same PR-head path (overwriting the prior
+        # attempt). verify-pr re-runs (no recompile — runner already has
+        # the compiled monorepo). evidence-check re-runs on the new result.
+        #
+        # Max 1 retry. Author/evidence failures during retry are tolerated
+        # so the original attempt's verdict still surfaces in the PR comment.
+        if: success()
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          NX_NO_CLOUD: 'true'
+          NX_CLOUD_ACCESS_TOKEN: ''
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2012
+          RESULT=$(ls -t "$PR_HEAD_DIR"/.verify-output/*/verify-result.json | head -1)
+          EVIDENCE=$(jq -r '.evidenceVerdict // "n/a"' "$RESULT")
+          if [ "$EVIDENCE" != "missing" ]; then
+            echo "evidence verdict is '$EVIDENCE' — no retry needed"
+            exit 0
+          fi
+          REASONING=$(jq -r '.evidenceReasoning // ""' "$RESULT")
+          echo "evidence missing — re-authoring with feedback:"
+          echo "  $REASONING"
+
+          if ! yarn verify-pr-generate \
+              --pr "$PR_NUMBER" \
+              --force \
+              --output "$PR_HEAD_DIR/.verify-recipes/pr-${PR_NUMBER}.spec.ts" \
+              --retry-context "$REASONING"; then
+            echo "retry verify-pr-generate failed — keeping original verdict"
+            exit 0
+          fi
+
+          # shellcheck disable=SC2012
+          BUNDLE=$(ls -t .verify-output/*/prompt-bundle.json | head -1)
+          if ! yarn verify-pr-author --bundle "$BUNDLE"; then
+            echo "retry verify-pr-author failed — keeping original verdict"
+            exit 0
+          fi
+
+          # Sub-shell so set -e here doesn't kill the outer step on regression.
+          ( cd "$PR_HEAD_DIR" && yarn verify-pr --recipe-spec ".verify-recipes/pr-${PR_NUMBER}.spec.ts" ) || \
+            echo "retry verify-pr exited non-zero (regression) — evidence-check will still run"
+
+          # shellcheck disable=SC2012
+          NEW_RESULT=$(ls -t "$PR_HEAD_DIR"/.verify-output/*/verify-result.json | head -1)
+          if [ "$NEW_RESULT" = "$RESULT" ]; then
+            echo "retry produced no new verify-result.json — keeping original verdict"
+            exit 0
+          fi
+          # Annotate the new result so downstream observers know this came
+          # from the retry loop.
+          jq '. + {evidenceRetry: true}' "$NEW_RESULT" > "$NEW_RESULT.tmp" && mv "$NEW_RESULT.tmp" "$NEW_RESULT"
+
+          yarn verify-evidence-check \
+            --result "$NEW_RESULT" \
+            --diff /tmp/pr.diff \
+            --recipe "$PR_HEAD_DIR/.verify-recipes/pr-${PR_NUMBER}.spec.ts" || true
+
+          FINAL_EVIDENCE=$(jq -r '.evidenceVerdict // "n/a"' "$NEW_RESULT")
+          FINAL_VERDICT=$(jq -r '.verdict' "$NEW_RESULT")
+          echo "retry complete — final verdict=$FINAL_VERDICT evidence=$FINAL_EVIDENCE"
 
       - name: Read verdict
         id: verdict
@@ -333,8 +403,9 @@ jobs:
                 body = `## Verify Harness\n\nNo verdict produced — the workflow failed before the harness ran (likely recipe-author dispatch, deny-regex, or lint). See [run log](${url}) for details.`;
               } else {
                 const verdict = JSON.parse(fs.readFileSync(resultPath, 'utf-8'));
+                const retrySuffix = verdict.evidenceRetry ? ' (after 1 retry)' : '';
                 const evidenceLine = verdict.evidenceVerdict
-                  ? `\n\nEvidence (vision-check, \`${verdict.evidenceModel ?? 'claude-haiku-4-5'}\`): \`${verdict.evidenceVerdict}\`${verdict.evidenceReasoning ? ` — ${verdict.evidenceReasoning}` : ''}`
+                  ? `\n\nEvidence${retrySuffix} (vision-check, \`${verdict.evidenceModel ?? 'claude-haiku-4-5'}\`): \`${verdict.evidenceVerdict}\`${verdict.evidenceReasoning ? ` — ${verdict.evidenceReasoning}` : ''}`
                   : '';
                 body = `## Verify Harness\n\nVerdict: \`${verdict.verdict}\` (target \`${verdict.template}\`)${verdict.regressionReason ? `\n\nReason: \`${verdict.regressionReason}\`` : ''}${evidenceLine}\n\nReplay: \`npx playwright show-trace\` on the trace.zip in [artifacts](${url}/artifacts).${renderScreenshots()}`;
               }
