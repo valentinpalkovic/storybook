@@ -307,6 +307,8 @@ function collectRelevantStoryFiles(diffPaths: readonly string[]): string[] {
   return [...collected].sort().slice(0, STORY_ROUTE_FILE_CAP);
 }
 
+const STORY_FILE_LINE_CAP = 160;
+
 function renderStoryRoutesSection(routes: StoryFileRoutes[]): string {
   if (routes.length === 0) return '';
   const blocks = routes.map((r) => {
@@ -341,6 +343,38 @@ function renderStoryRoutesSection(routes: StoryFileRoutes[]): string {
     'kind-ids by hand; that has 404’d in past runs.',
     '',
     ...blocks,
+  ].join('\n');
+}
+
+function renderStoryFileSourcesSection(routes: StoryFileRoutes[]): string {
+  if (routes.length === 0) return '';
+  const sections = routes.map((r) => {
+    const relPath = path.relative(repoRoot, r.filePath);
+    let source: string;
+    try {
+      source = fs.readFileSync(r.filePath, 'utf-8');
+    } catch {
+      return '';
+    }
+    const linesArr = source.split('\n');
+    const capped = linesArr.length > STORY_FILE_LINE_CAP;
+    const slice = capped ? linesArr.slice(0, STORY_FILE_LINE_CAP).join('\n') : source;
+    const trailer = capped
+      ? `\n// ... (${linesArr.length - STORY_FILE_LINE_CAP} more lines elided)`
+      : '';
+    return `### ${relPath}\n\n\`\`\`tsx\n${slice}${trailer}\n\`\`\``;
+  });
+  const populated = sections.filter(Boolean);
+  if (populated.length === 0) return '';
+  return [
+    '## Story file sources (siblings / direct targets of the diff)',
+    '',
+    'Read these to understand how the story mounts the component the diff touches —',
+    '`meta.args`, `meta.parameters`, and story-level `args` reveal what the rendered',
+    'DOM looks like (e.g. `args: { name: "object" }` means the underlying input id /',
+    'label text is derived from `"object"`, not from `"value"` or the story export name).',
+    '',
+    ...populated,
   ].join('\n');
 }
 
@@ -443,23 +477,29 @@ async function main(argv: string[]): Promise<number> {
   // path-dependent enough that agents have 404'd guessing kind-ids by hand.
   // The harness now derives them deterministically and surfaces the result
   // so the agent uses the real route.
-  const storyRoutesSection = (() => {
+  const { storyRoutesSection, storyFileSourcesSection } = (() => {
     try {
       const candidates = collectRelevantStoryFiles(prMeta.files.map((f) => f.path));
-      if (candidates.length === 0) return '';
+      if (candidates.length === 0) return { storyRoutesSection: '', storyFileSourcesSection: '' };
       const derived = deriveRoutesForFiles(MAIN_CONFIG_PATH, candidates);
-      return renderStoryRoutesSection(derived);
+      return {
+        storyRoutesSection: renderStoryRoutesSection(derived),
+        storyFileSourcesSection: renderStoryFileSourcesSection(derived),
+      };
     } catch (err) {
       console.error(
         `[verify-pr-generate] derive-story-routes failed (non-fatal): ${
           err instanceof Error ? err.message : String(err)
         }`
       );
-      return '';
+      return { storyRoutesSection: '', storyFileSourcesSection: '' };
     }
   })();
   if (storyRoutesSection) {
     prompt = `${prompt}\n\n---\n\n${storyRoutesSection}`;
+  }
+  if (storyFileSourcesSection) {
+    prompt = `${prompt}\n\n---\n\n${storyFileSourcesSection}`;
   }
 
   // Retry-loop context: workflow re-invokes verify-pr-generate with
