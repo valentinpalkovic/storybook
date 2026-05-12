@@ -140,17 +140,59 @@ jobs:
           # (the GitHub-hosted ubuntu-22.04 image does not pre-bundle
           # @playwright/test browsers).
           yarn playwright install --with-deps chromium
+
+          # Stub a regression verdict if compile fails. Without this, the
+          # workflow short-circuits before verify-result.json is written and
+          # the PR comment shows "No verdict produced" — confusing for cases
+          # like PR #15 where the upstream PR genuinely doesn't compile.
+          # The stub captures the tail of the compile output as
+          # regressionReason so reviewers see WHY the verdict is regression.
+          write_compile_failure_stub() {
+            local log="$1"
+            local run_id
+            run_id="$(date -u +%Y-%m-%dT%H-%M-%S.000Z)"
+            local out_dir=".verify-output/${run_id}"
+            mkdir -p "$out_dir"
+            local reason
+            reason="$(tail -c 4000 "$log" | tr -d '\000' | jq -Rs .)"
+            jq -n \
+              --arg runId "$run_id" \
+              --arg template "internal-ui" \
+              --argjson reason "$reason" \
+              '{
+                schemaVersion: 1,
+                runId: $runId,
+                verdict: "regression",
+                template: $template,
+                regressionReason: "compile failure (see regressionDetails)",
+                regressionDetails: $reason,
+                storyIds: [],
+                recipeSpecPath: "",
+                tests: [],
+                traceZipPaths: [],
+                durations: {},
+                createdAt: (now | todate)
+              }' > "$out_dir/verify-result.json"
+            echo "[verify] compile failure — wrote stub verdict to $out_dir/verify-result.json"
+          }
+          COMPILE_LOG="$RUNNER_TEMP/verify-compile.log"
           # Compile core FIRST so eslint-plugin's prebuild script (which
           # imports from `storybook/csf` via jiti) can resolve
           # `storybook/dist/csf/index.js`. nx run-many parallelises by
           # default and does not topo-order compile targets unless an
           # explicit `dependsOn: ["^compile"]` is set, which the repo
           # currently lacks for the eslint-plugin chain.
-          yarn nx compile core
+          if ! yarn nx compile core 2>&1 | tee "$COMPILE_LOG"; then
+            write_compile_failure_stub "$COMPILE_LOG"
+            exit 0
+          fi
           # Then compile every other NX project so the internal-ui dev
           # server can resolve @storybook/react-vite + every addon
           # listed in code/.storybook/main.ts.
-          yarn nx run-many -t compile
+          if ! yarn nx run-many -t compile 2>&1 | tee "$COMPILE_LOG"; then
+            write_compile_failure_stub "$COMPILE_LOG"
+            exit 0
+          fi
           # Swallow non-zero exit so downstream Evidence-check / Retry steps
           # always run. Final verdict gate at end of job ("Fail job if final
           # verdict is regression") preserves red-CI signal based on the
@@ -496,7 +538,10 @@ jobs:
                 const evidenceLine = verdict.evidenceVerdict
                   ? `\n\nEvidence${retrySuffix} (vision-check, \`${verdict.evidenceModel ?? 'claude-haiku-4-5'}\`): \`${verdict.evidenceVerdict}\`${verdict.evidenceReasoning ? ` — ${verdict.evidenceReasoning}` : ''}`
                   : '';
-                body = `## Verify Harness\n\nVerdict: \`${verdict.verdict}\` (target \`${verdict.template}\`)${verdict.regressionReason ? `\n\nReason: \`${verdict.regressionReason}\`` : ''}${evidenceLine}\n\nReplay: \`npx playwright show-trace\` on the trace.zip in [artifacts](${url}/artifacts).${renderScreenshots()}`;
+                const detailsBlock = verdict.regressionDetails
+                  ? `\n\n<details><summary>Compile output (last 4KB)</summary>\n\n\`\`\`\n${String(verdict.regressionDetails).slice(0, 4000)}\n\`\`\`\n\n</details>`
+                  : '';
+                body = `## Verify Harness\n\nVerdict: \`${verdict.verdict}\` (target \`${verdict.template}\`)${verdict.regressionReason ? `\n\nReason: \`${verdict.regressionReason}\`` : ''}${detailsBlock}${evidenceLine}\n\nReplay: \`npx playwright show-trace\` on the trace.zip in [artifacts](${url}/artifacts).${renderScreenshots()}`;
               }
             } catch (err) {
               body = `## Verify Harness\n\nError reading verdict: \`${err.message}\`. See [run log](${url}).`;
