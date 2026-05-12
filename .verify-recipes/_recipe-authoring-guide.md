@@ -131,9 +131,11 @@ Avoid:
 - Docs: `?path=/docs/<kind-id>--<story-id>` (e.g., `/?path=/docs/example-button--docs`)
 - Manager only (no story): omit the `path` param or use `?path=/`
 
-Kind-ids are kebab-case from the story `title` field; story-ids are kebab-case from the export name. When the PR diff names a `*.stories.tsx` file, derive the kind-id from the file path or the `title:` line in the diff.
+**Use the routes the harness pre-computes for you.** The prompt bundle contains a "Story routes (computed deterministically by the harness)" section that lists, for each `*.stories.{ts,tsx,mdx}` file referenced by the diff (or imported by a sibling of a touched non-stories source file), the canonical title, the per-export `storyId`, and the matching `storyUrl` / `docsUrl`. These come from Storybook's own auto-title + `toId` algorithms, so they match what the indexer would emit at runtime.
 
-**When the diff touches a non-stories component file** (e.g. `code/addons/docs/src/blocks/controls/Object.tsx`), find the sibling `*.stories.tsx` in the same directory and derive the kind-id from its path under the `titlePrefix` registered in `code/.storybook/main.ts`. For example, `code/addons/docs/src/blocks/controls/Object.stories.tsx` is indexed with `titlePrefix: 'addons/docs'` and renders at `?path=/story/addons-docs-blocks-controls-object--object` (or `/docs/addons-docs-blocks-controls-object--docs` if `tags: ['autodocs']`). Do not guess routes like `addons-controls-<X>--basic` — they will 404. If the sibling story is autodocs, the docs page renders the component directly; that is usually the right route for control / panel component diffs.
+Past dispatches that hand-derived kebab-case kind-ids (`addons-controls-object--basic`, `addons-controls-basics--docs`, …) have 404'd because Storybook's auto-title pipeline mangles paths differently than a naive kebabify (leaf/dir dedupe, `index.stories.ts` collapsing, `titlePrefix` interplay, etc). Always prefer the routes the harness emits.
+
+If the section is absent (because the diff doesn't touch any code under `code/` or because no sibling story imports the changed module), fall back to the manager-only route `?path=/` and rely on sidebar-driven navigation. Do not invent a URL.
 
 ---
 

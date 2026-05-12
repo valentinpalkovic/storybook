@@ -20,6 +20,10 @@ import type {
   PromptReferenceSpec,
 } from './verify/agent-prompt.ts';
 import { matchedTriageGlobs, triageReferenceSpecs } from './verify/triage.ts';
+import {
+  deriveRoutesForFiles,
+  type StoryFileRoutes,
+} from './verify/derive-story-routes.ts';
 
 const repoRoot = path.resolve(import.meta.dirname, '..');
 const RECIPES_DIR = path.resolve(repoRoot, '.verify-recipes');
@@ -237,6 +241,109 @@ function readReferenceSpec(absPath: string): PromptReferenceSpec {
   return { path: path.relative(repoRoot, absPath), source };
 }
 
+const STORY_EXT = /\.(stories|story)\.(ts|tsx|js|jsx|cjs|mjs)$|\.mdx$/;
+const MAIN_CONFIG_PATH = path.resolve(repoRoot, 'code/.storybook/main.ts');
+const STORY_ROUTE_FILE_CAP = 8;
+
+/**
+ * Resolve the list of *.stories.* files relevant to the diff, deterministically:
+ *   - Any story file directly touched by the diff.
+ *   - For each non-stories source file under `code/**`, scan its directory
+ *     for sibling *.stories.* files (cap at depth=0 to keep scope tight).
+ * Result is deduped + sorted; capped at STORY_ROUTE_FILE_CAP to bound prompt growth.
+ */
+function collectRelevantStoryFiles(diffPaths: readonly string[]): string[] {
+  const collected = new Set<string>();
+  for (const rel of diffPaths) {
+    if (!rel.startsWith('code/')) continue;
+    const abs = path.resolve(repoRoot, rel);
+    if (STORY_EXT.test(rel)) {
+      if (fs.existsSync(abs)) collected.add(abs);
+      continue;
+    }
+    // Non-stories source: look for sibling story files with the SAME basename
+    // first (e.g. `Object.tsx` -> `Object.stories.tsx`). If none, fall back to
+    // any sibling stories in the directory — capped to one to keep prompt
+    // size sane. Avoids dumping every sibling story file when a single
+    // utility file in a busy directory changes.
+    const dir = path.dirname(abs);
+    if (!fs.existsSync(dir)) continue;
+    const baseName = path.basename(rel).replace(/\.(ts|tsx|js|jsx|cjs|mjs)$/, '');
+    let entries: string[];
+    try {
+      entries = fs.readdirSync(dir);
+    } catch {
+      continue;
+    }
+    const sameNameStories = entries.filter(
+      (name) => STORY_EXT.test(name) && name.startsWith(`${baseName}.stories.`)
+    );
+    if (sameNameStories.length > 0) {
+      for (const name of sameNameStories) collected.add(path.join(dir, name));
+      continue;
+    }
+    // Otherwise, look for sibling stories that import the changed module by
+    // basename — that is a strong signal the story mounts the changed code.
+    // Cap at 2 matches per source file. If none import it, emit no fallback
+    // (better silent than misleading: random alphabetical siblings have
+    // sent past runs to unrelated stories).
+    const importPattern = new RegExp(
+      `from\\s+['"][^'"]*\\b${baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:\\.tsx?)?['"]`
+    );
+    const importers: string[] = [];
+    for (const name of entries) {
+      if (!STORY_EXT.test(name)) continue;
+      const storyPath = path.join(dir, name);
+      try {
+        const content = fs.readFileSync(storyPath, 'utf-8');
+        if (importPattern.test(content)) importers.push(storyPath);
+      } catch {
+        /* unreadable — skip */
+      }
+      if (importers.length >= 2) break;
+    }
+    for (const p of importers) collected.add(p);
+  }
+  return [...collected].sort().slice(0, STORY_ROUTE_FILE_CAP);
+}
+
+function renderStoryRoutesSection(routes: StoryFileRoutes[]): string {
+  if (routes.length === 0) return '';
+  const blocks = routes.map((r) => {
+    const relPath = path.relative(repoRoot, r.filePath);
+    const lines: string[] = [];
+    lines.push(`- **${relPath}**`);
+    lines.push(`  - title: \`${r.title}\``);
+    lines.push(`  - autodocs: ${r.autodocs}`);
+    if (r.routes.length === 0) {
+      if (r.autodocs) {
+        lines.push(`  - docs route: \`/?path=/docs/${r.kindId}--docs\``);
+      } else {
+        lines.push('  - routes: (no exported stories detected)');
+      }
+    } else {
+      const previewRoutes = r.routes.slice(0, 8);
+      for (const route of previewRoutes) {
+        const docsSuffix = route.docsUrl ? ` | docs: \`${route.docsUrl}\`` : '';
+        lines.push(`  - \`${route.exportName}\` → \`${route.storyUrl}\`${docsSuffix}`);
+      }
+      if (r.routes.length > previewRoutes.length) {
+        lines.push(`  - (+${r.routes.length - previewRoutes.length} more exports)`);
+      }
+    }
+    return lines.join('\n');
+  });
+  return [
+    '## Story routes (computed deterministically by the harness)',
+    '',
+    'These routes are derived from `code/.storybook/main.ts` + the story files themselves using',
+    'Storybook’s own auto-title + `toId` algorithms. Use them verbatim — do NOT re-derive kebab-case',
+    'kind-ids by hand; that has 404’d in past runs.',
+    '',
+    ...blocks,
+  ].join('\n');
+}
+
 async function main(argv: string[]): Promise<number> {
   const { values: flags } = parseArgs({
     args: argv,
@@ -330,6 +437,30 @@ async function main(argv: string[]): Promise<number> {
   };
 
   let prompt = buildRecipeAuthorPrompt(promptInput);
+
+  // Pre-compute canonical story routes for files touched by the diff (and
+  // siblings of non-stories source files). Storybook auto-title + toId are
+  // path-dependent enough that agents have 404'd guessing kind-ids by hand.
+  // The harness now derives them deterministically and surfaces the result
+  // so the agent uses the real route.
+  const storyRoutesSection = (() => {
+    try {
+      const candidates = collectRelevantStoryFiles(prMeta.files.map((f) => f.path));
+      if (candidates.length === 0) return '';
+      const derived = deriveRoutesForFiles(MAIN_CONFIG_PATH, candidates);
+      return renderStoryRoutesSection(derived);
+    } catch (err) {
+      console.error(
+        `[verify-pr-generate] derive-story-routes failed (non-fatal): ${
+          err instanceof Error ? err.message : String(err)
+        }`
+      );
+      return '';
+    }
+  })();
+  if (storyRoutesSection) {
+    prompt = `${prompt}\n\n---\n\n${storyRoutesSection}`;
+  }
 
   // Retry-loop context: workflow re-invokes verify-pr-generate with
   // --retry-context "<reasoning>" when a prior attempt either (a) had the
