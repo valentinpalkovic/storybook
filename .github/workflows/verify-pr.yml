@@ -109,6 +109,20 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
+      - name: Sync trusted .verify-recipes helpers into PR head
+        # The authored spec imports `./_util.ts` (which re-exports `expect`
+        # + a `test` extended with the auto-failure-capture fixture). The
+        # PR-head checkout has a copy of `_util.ts` at the SHA the PR
+        # branched from, which lags behind the base branch's harness
+        # iteration. Always overwrite with the base-branch version so the
+        # spec runs against the current util contract. example-smoke.spec.ts
+        # is copied alongside so reference recipes stay aligned.
+        run: |
+          set -euo pipefail
+          mkdir -p "$PR_HEAD_DIR/.verify-recipes"
+          cp .verify-recipes/_util.ts "$PR_HEAD_DIR/.verify-recipes/_util.ts"
+          cp .verify-recipes/example-smoke.spec.ts "$PR_HEAD_DIR/.verify-recipes/example-smoke.spec.ts"
+
       - name: Verify PR
         working-directory: ${{ runner.temp }}/pr-head
         env:
