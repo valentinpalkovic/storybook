@@ -2,3 +2,4 @@ run_id,pr_number,verdict,target,evidence_verdict,evidence_retry,unit_tests_ran,u
 "25740020805","16","verified","internal-ui","undetermined","true","true","true","21668.350675","2026-05-12T14:15:51.663Z"
 "25744209910","16","regression","internal-ui","n/a","true","true","true","22849.355711","2026-05-12T15:29:40.475Z"
 "25744990764","14","regression","internal-ui","n/a","true","false","n/a","23984.643540999998","2026-05-12T15:42:25.440Z"
+"25744990856","17","verified","vue3-vite/default-ts","found","false","false","n/a","17627.702317000003","2026-05-12T15:42:33.225Z"
