@@ -7,3 +7,4 @@ run_id,pr_number,verdict,target,evidence_verdict,evidence_retry,unit_tests_ran,u
 "25754231864","20","regression","internal-ui","n/a","true","false","n/a","21791.534186999997","2026-05-12T18:34:10.747Z"
 "25754231503","18","verified","svelte-vite/default-ts","undetermined","true","false","n/a","16965.243919","2026-05-12T18:36:20.648Z"
 "25754230674","21","verified","angular-cli/default-ts","undetermined","true","true","true","38779.125962","2026-05-12T18:37:42.759Z"
+"25754933773","20","regression","internal-ui","n/a","true","false","n/a","23736.527668000002","2026-05-12T18:49:04.270Z"
