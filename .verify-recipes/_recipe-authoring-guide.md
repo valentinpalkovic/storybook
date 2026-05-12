@@ -198,7 +198,7 @@ The deny-regex blocks `fs.*` and `child_process` inside the spec body. That does
   - `?globals=theme:dark` (or whatever global the renderer exposes) to flip dark-mode and other globals without clicking the toolbar.
   - `?args=name:Hello` to seed initial arg values for a story.
 - **`page.evaluate(...)` against the manager-api.** Storybook exposes its manager-api on `window` once the manager mounts — useful when a feature has a public toggle / setter that recipes can call directly. Inspect the diff for an `experimental_*` or `api.*` setter the change relies on and call it from the recipe.
-- **Save from Controls (csf-tools write-back) for change-detection-style features.** The Controls addon's "Save" button is enabled by default. The recipe can open a story (e.g. `example-button--primary`), open Controls, change a control value (e.g. `label`), and click the "Save" button — Storybook's csf-tools writes the modified args back to the underlying `*.stories.tsx` file on the runner's PR-head workspace. The change-detection scanner reads uncommitted working-tree state, so a Save-driven edit is enough to flip a story's status to MOD and surface change-detection UI (e.g. `ReviewChangesButton`'s clear button) in the sidebar. The recipe never touches `fs.*` directly — Storybook does the write.
+- **Save from Controls (csf-tools write-back) for change-detection-style features.** The Controls addon's save button is enabled by default. The recipe opens a story (e.g. `example-button--primary`), clicks the Controls tab (`getByRole('tab', { name: /controls/i })`), edits a control value (e.g. the `label` input), and clicks **`Save changes to story`** (aria-label) / **`Update story`** (visible text) — i.e. `getByRole('button', { name: /save changes to story|update story/i })`. Storybook's csf-tools writes the modified args back to the underlying `*.stories.tsx` file on the runner's PR-head workspace. The change-detection scanner reads uncommitted working-tree state, so the Save-driven edit flips the story's status to MOD and surfaces change-detection UI (e.g. `ReviewChangesButton`'s clear button) in the sidebar. The recipe never touches `fs.*` directly — Storybook does the write.
 - **Keyboard / focus / hover.** `.focus()`, `.hover()`, `page.keyboard.press('Tab')`, `page.keyboard.press('Escape')`. Many a11y / interaction PRs only render their change in these states.
 - **localStorage / sessionStorage / cookies.** Read or write via `page.evaluate(...)` when the change depends on persisted UI state (e.g. sidebar collapse, recently-viewed list).
 - **Manager-side state via `__STORYBOOK_*` globals.** When the diff touches preview-api or manager-api code that exposes a development hook on `globalThis`, prefer `page.evaluate(() => globalThis.__STORYBOOK_*…)` over reverse-engineering a click sequence.
@@ -239,12 +239,13 @@ await controlsTab.click();
 const labelInput = page.locator('input[name="label"], textarea[name="label"]').first();
 await labelInput.fill('Verify harness saved this');
 
-// 2. Save from Controls — csf-tools writes the edit back to
-//    code/.storybook/example-button.stories.tsx on the runner's working tree.
-const saveButton = page.getByRole('button', { name: /save/i });
+// 2. Save from Controls — csf-tools writes the edit back to the story file on
+//    the runner's working tree. The button in this Storybook is
+//    aria-labelled "Save changes to story" with visible text "Update story";
+//    match on either to stay robust across label drift.
+const saveButton = page.getByRole('button', { name: /save changes to story|update story/i });
+await expect(saveButton).toBeVisible({ timeout: 10000 });
 await saveButton.click();
-// Wait for the save to settle (toast, button state change, or status flip).
-await expect(saveButton).toBeDisabled({ timeout: 5000 }).catch(() => {});
 
 // 3. Change-detection now sees the story as MOD; ReviewChangesButton mounts.
 const reviewToggle = page.getByRole('button', { name: /review.+stories/i });
