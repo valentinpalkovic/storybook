@@ -123,6 +123,64 @@ jobs:
           cp .verify-recipes/_util.ts "$PR_HEAD_DIR/.verify-recipes/_util.ts"
           cp .verify-recipes/example-smoke.spec.ts "$PR_HEAD_DIR/.verify-recipes/example-smoke.spec.ts"
 
+      - name: Install sandbox-runtime (Layer-2)
+        # Layer-2 defense-in-depth: wrap `yarn verify-pr` (the only step that
+        # executes the agent-emitted Playwright spec from untrusted PR-head
+        # code) in @anthropic-ai/sandbox-runtime. bubblewrap-backed FS +
+        # network jail so a compromised recipe can't reach ~/.ssh, ~/.aws,
+        # ~/.npmrc, or the public internet. Layer-1 already strips creds
+        # from env; Layer-2 catches anything that survives env-stripping
+        # plus tightens the FS attack surface.
+        #
+        # ubuntu-22.04 has unprivileged user namespaces enabled by default,
+        # which bubblewrap requires. ubuntu-24.04+ would need
+        # `sysctl kernel.apparmor_restrict_unprivileged_userns=0`.
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bubblewrap socat ripgrep
+          sudo npm install -g @anthropic-ai/sandbox-runtime
+          srt --version
+
+      - name: Build sandbox settings
+        # Linux srt requires literal paths (no glob, no env var expansion).
+        # Compose the settings file at runtime so $RUNNER_TEMP / $HOME
+        # resolve to the runner's actual paths. denyRead the high-value
+        # credential targets even though default reads are allow (extra
+        # belt-and-suspenders alongside Layer-1's env stripping). allowWrite
+        # covers RUNNER_TEMP (contains PR_HEAD_DIR + .verify-output),
+        # /tmp (chromium scratch + user-data-dir), and HOME/.cache
+        # (playwright binary cache writes during browser launch).
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/srt-settings.json" <<JSON
+          {
+            "network": {
+              "allowLocalBinding": true,
+              "allowedDomains": [],
+              "deniedDomains": []
+            },
+            "filesystem": {
+              "allowWrite": [
+                "$RUNNER_TEMP",
+                "/tmp",
+                "$HOME/.cache",
+                "$HOME/.local/share"
+              ],
+              "denyRead": [
+                "$HOME/.ssh",
+                "$HOME/.aws",
+                "$HOME/.docker",
+                "$HOME/.npmrc",
+                "$HOME/.gitconfig",
+                "$HOME/.config/gh"
+              ]
+            }
+          }
+          JSON
+          echo "SRT_SETTINGS=$RUNNER_TEMP/srt-settings.json" >> "$GITHUB_ENV"
+          cat "$RUNNER_TEMP/srt-settings.json"
+
       - name: Verify PR
         working-directory: ${{ runner.temp }}/pr-head
         env:
@@ -256,7 +314,11 @@ jobs:
           # always run. Final verdict gate at end of job ("Fail job if final
           # verdict is regression") preserves red-CI signal based on the
           # post-retry verdict in verify-result.json.
-          yarn verify-pr --recipe-spec ".verify-recipes/pr-${PR_NUMBER}.spec.ts" || \
+          # Layer-2: srt wraps just this invocation — install + compile
+          # above legitimately need full FS + network for yarn registries +
+          # node_modules writes, so they run outside the sandbox.
+          srt --settings "$SRT_SETTINGS" \
+            yarn verify-pr --recipe-spec ".verify-recipes/pr-${PR_NUMBER}.spec.ts" || \
             echo "verify-pr exited non-zero — verdict captured in verify-result.json"
 
       - name: Evidence check (vision)
@@ -399,8 +461,10 @@ jobs:
           # spec (untrusted), so GITHUB_TOKEN / GH_TOKEN / ANTHROPIC_API_KEY
           # must not be visible to the subprocess. The trusted scripts
           # above (verify-pr-generate, verify-pr-author) still see them
-          # because env -u only strips for this single command.
+          # because env -u only strips for this single command. srt wraps
+          # the actual recipe execution for Layer-2 FS + network jail.
           ( cd "$PR_HEAD_DIR" && env -u GITHUB_TOKEN -u GH_TOKEN -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN \
+              srt --settings "$SRT_SETTINGS" \
               yarn verify-pr --recipe-spec ".verify-recipes/pr-${PR_NUMBER}.spec.ts" ) || \
             echo "retry verify-pr exited non-zero — evidence-check will still run if verdict==verified"
 
