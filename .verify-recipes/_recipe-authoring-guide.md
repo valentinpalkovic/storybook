@@ -189,6 +189,22 @@ Before emitting the spec, work through the following four questions explicitly:
 3. **If the trigger state requires filesystem mutation or any other action recipes cannot perform** (deny-regex blocks `fs.*`, `child_process`, `node:*` imports — see §9), state this in a single-line comment in the spec body and fall back to: render the surrounding container, assert `#sb-errordisplay` is hidden, assert `expect(pageErrors).toEqual([])`. Module-resolution and render-time crashes for the changed file will still surface as page errors, which is a meaningful (if narrow) verification signal. **Do NOT claim verification of behaviour you cannot reach** — be explicit in the comment about the limitation.
 4. **Screenshot the region containing the changed UI**, not the whole page. Use `locator.screenshot({ path: testInfo.outputPath('<name>.png') })` against the parent of the changed element (e.g. `.sidebar-container` for sidebar diffs, the addon-panel locator for addon panels, the docs `[role="table"]` for ArgsTable changes). Full-page or generic preview screenshots are acceptable only for layout-wide changes. The PR comment renders every screenshot you attach inline — reviewers should see the change in the image.
 
+### Affordances Playwright recipes have for setting up trigger state
+
+The deny-regex blocks `fs.*` and `child_process` inside the spec body. That does **not** mean the test cannot reach state that lives on disk — Storybook's own in-app machinery exposes plenty of paths. Before declaring a trigger state unreachable, consider:
+
+- **URL params for navigation, theme, args, globals, and docs vs story modes.**
+  - `?path=/story/<kind-id>--<story-id>` and `?path=/docs/<kind-id>--<story-id>` for story / docs routes.
+  - `?globals=theme:dark` (or whatever global the renderer exposes) to flip dark-mode and other globals without clicking the toolbar.
+  - `?args=name:Hello` to seed initial arg values for a story.
+- **`page.evaluate(...)` against the manager-api.** Storybook exposes its manager-api on `window` once the manager mounts — useful when a feature has a public toggle / setter that recipes can call directly. Inspect the diff for an `experimental_*` or `api.*` setter the change relies on and call it from the recipe.
+- **Save from Controls (csf-tools write-back) for change-detection-style features.** The Controls addon's "Save" button is enabled by default. The recipe can open a story (e.g. `example-button--primary`), open Controls, change a control value (e.g. `label`), and click the "Save" button — Storybook's csf-tools writes the modified args back to the underlying `*.stories.tsx` file on the runner's PR-head workspace. The change-detection scanner reads uncommitted working-tree state, so a Save-driven edit is enough to flip a story's status to MOD and surface change-detection UI (e.g. `ReviewChangesButton`'s clear button) in the sidebar. The recipe never touches `fs.*` directly — Storybook does the write.
+- **Keyboard / focus / hover.** `.focus()`, `.hover()`, `page.keyboard.press('Tab')`, `page.keyboard.press('Escape')`. Many a11y / interaction PRs only render their change in these states.
+- **localStorage / sessionStorage / cookies.** Read or write via `page.evaluate(...)` when the change depends on persisted UI state (e.g. sidebar collapse, recently-viewed list).
+- **Manager-side state via `__STORYBOOK_*` globals.** When the diff touches preview-api or manager-api code that exposes a development hook on `globalThis`, prefer `page.evaluate(() => globalThis.__STORYBOOK_*…)` over reverse-engineering a click sequence.
+
+Only fall back to the §8.1.3 "trigger state is genuinely unreachable" path after walking through the affordances above and confirming none apply to the diff at hand. If none apply, say so explicitly in a single-line comment in the spec body and limit the assertions to module-resolution + pageerror — the harness's evidence-check will report the gap honestly to reviewers.
+
 ### Worked example — focus ring on a selected sidebar item
 
 ```ts
