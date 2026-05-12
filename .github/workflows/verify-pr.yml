@@ -599,17 +599,46 @@ jobs:
           echo "$URLS" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
+      - name: Stage artifacts (rename dotdirs)
+        # actions/upload-artifact v7 ships dotfiles into the zip, but
+        # tools like macOS Finder + most unzippers hide them by default,
+        # which makes the artifact look empty even though it is ~MBs.
+        # Stage the contents under non-dot names so reviewers can browse
+        # the zip without toggling hidden-file display.
+        if: always()
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          STAGE="$RUNNER_TEMP/verify-artifacts"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE/runner-pr-head" "$STAGE/base"
+          if [ -d "$PR_HEAD_DIR/.verify-output" ]; then
+            cp -a "$PR_HEAD_DIR/.verify-output/." "$STAGE/runner-pr-head/verify-output/"
+          fi
+          if [ -d "$PR_HEAD_DIR/.verify-recipes" ]; then
+            mkdir -p "$STAGE/runner-pr-head/verify-recipes"
+            # Only include the materialised PR spec (trusted helpers
+            # _util.ts + example-smoke.spec.ts live in the base copy).
+            if [ -f "$PR_HEAD_DIR/.verify-recipes/pr-${PR_NUMBER}.spec.ts" ]; then
+              cp "$PR_HEAD_DIR/.verify-recipes/pr-${PR_NUMBER}.spec.ts" \
+                "$STAGE/runner-pr-head/verify-recipes/pr-${PR_NUMBER}.spec.ts"
+            fi
+          fi
+          if [ -d "$GITHUB_WORKSPACE/.verify-output" ]; then
+            cp -a "$GITHUB_WORKSPACE/.verify-output/." "$STAGE/base/verify-output/"
+          fi
+          echo "VERIFY_ARTIFACTS_DIR=$STAGE" >> "$GITHUB_ENV"
+          # shellcheck disable=SC2012
+          ls -la "$STAGE" || true
+
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: verify-output-pr-${{ github.event.pull_request.number }}-${{ github.run_id }}
-          path: |
-            ${{ runner.temp }}/pr-head/.verify-output/
-            ${{ runner.temp }}/pr-head/.verify-recipes/pr-${{ github.event.pull_request.number }}.spec.ts
-            .verify-output/
+          path: ${{ env.VERIFY_ARTIFACTS_DIR }}/
           if-no-files-found: warn
-          include-hidden-files: true
           retention-days: 14
       - name: Post PR comment
         if: always()
