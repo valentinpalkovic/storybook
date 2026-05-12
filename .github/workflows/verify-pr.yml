@@ -154,7 +154,9 @@ jobs:
             local out_dir=".verify-output/${run_id}"
             mkdir -p "$out_dir"
             local reason
-            reason="$(tail -c 4000 "$log" | tr -d '\000' | jq -Rs .)"
+            # Strip ANSI escape sequences (CSI / SGR) so the PR comment shows
+            # readable text rather than `^[[31m`-style noise.
+            reason="$(tail -c 4000 "$log" | tr -d '\000' | sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g' | jq -Rs .)"
             jq -n \
               --arg runId "$run_id" \
               --arg template "internal-ui" \
