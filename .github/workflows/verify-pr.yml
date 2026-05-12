@@ -161,6 +161,7 @@ jobs:
               "deniedDomains": []
             },
             "filesystem": {
+              "allowRead": [],
               "allowWrite": [
                 "$RUNNER_TEMP",
                 "/tmp",
@@ -174,7 +175,8 @@ jobs:
                 "$HOME/.npmrc",
                 "$HOME/.gitconfig",
                 "$HOME/.config/gh"
-              ]
+              ],
+              "denyWrite": []
             }
           }
           JSON
