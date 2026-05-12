@@ -133,6 +133,8 @@ Avoid:
 
 Kind-ids are kebab-case from the story `title` field; story-ids are kebab-case from the export name. When the PR diff names a `*.stories.tsx` file, derive the kind-id from the file path or the `title:` line in the diff.
 
+**When the diff touches a non-stories component file** (e.g. `code/addons/docs/src/blocks/controls/Object.tsx`), find the sibling `*.stories.tsx` in the same directory and derive the kind-id from its path under the `titlePrefix` registered in `code/.storybook/main.ts`. For example, `code/addons/docs/src/blocks/controls/Object.stories.tsx` is indexed with `titlePrefix: 'addons/docs'` and renders at `?path=/story/addons-docs-blocks-controls-object--object` (or `/docs/addons-docs-blocks-controls-object--docs` if `tags: ['autodocs']`). Do not guess routes like `addons-controls-<X>--basic` — they will 404. If the sibling story is autodocs, the docs page renders the component directly; that is usually the right route for control / panel component diffs.
+
 ---
 
 ## 7. Frame access

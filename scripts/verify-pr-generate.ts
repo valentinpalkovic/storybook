@@ -331,12 +331,15 @@ async function main(argv: string[]): Promise<number> {
 
   let prompt = buildRecipeAuthorPrompt(promptInput);
 
-  // Retry-loop context: when the evidence-checker rules a prior attempt's
-  // screenshots as 'missing', the workflow re-invokes verify-pr-generate
-  // with --retry-context "<vision reasoning>". Append it as a final section
-  // so the next dispatch knows what the previous spec failed to surface.
+  // Retry-loop context: workflow re-invokes verify-pr-generate with
+  // --retry-context "<reasoning>" when a prior attempt either (a) had the
+  // evidence-checker rule the screenshots 'missing'/'undetermined' OR
+  // (b) failed Playwright assertions outright (regression verdict). Both
+  // paths feed back useful signal — vision reasoning for case (a), error
+  // context + page snapshot for case (b). Append as a final section so the
+  // next dispatch knows what the previous spec got wrong.
   if (flags['retry-context']) {
-    prompt = `${prompt}\n\n---\n\n## Retry guidance — previous attempt's screenshots did not show the change\n\n${flags['retry-context']}\n\nWhen authoring this attempt, set up the UI state required to make the diff's visible change appear (see authoring-guide §8.1). If the trigger state genuinely cannot be reached from a Playwright recipe (filesystem mutation or process action recipes cannot perform), say so explicitly in a single-line comment in the spec body and keep the recipe limited to module-resolution + pageerror verification. Do NOT repeat the previous attempt's approach.`;
+    prompt = `${prompt}\n\n---\n\n## Retry guidance — previous attempt did not verify the diff\n\nThe previous attempt either failed its assertions or did not surface the diff's visible change in its screenshots. Feedback from that run:\n\n${flags['retry-context']}\n\nWhen authoring this attempt, set up the UI state required to make the diff's visible change appear (see authoring-guide §8.1). If a selector/route timed out, prefer the actual DOM names from the feedback (page snapshots show ground truth). If the trigger state genuinely cannot be reached from a Playwright recipe (filesystem mutation or process action recipes cannot perform), say so explicitly in a single-line comment in the spec body and keep the recipe limited to module-resolution + pageerror verification. Do NOT repeat the previous attempt's approach.`;
   }
 
   const bundle: PromptBundle = {
