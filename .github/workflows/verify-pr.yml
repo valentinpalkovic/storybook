@@ -289,7 +289,7 @@ jobs:
               sandbox:*)
                 TEMPLATE="${CANDIDATE#sandbox:}"
                 case "$TEMPLATE" in
-                  react-vite/default-ts|react-webpack/default-ts|vue3-vite/default-ts|svelte-vite/default-ts|angular-cli/default-ts|nextjs/default-ts)
+                  react-vite/default-ts|react-webpack/default-ts|vue3-vite/default-ts|svelte-vite/default-ts|angular-cli/default-ts|nextjs/default-ts|nextjs-vite/default-ts)
                     TARGET="sandbox"
                     ;;
                   *)
