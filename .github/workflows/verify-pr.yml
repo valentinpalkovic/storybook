@@ -139,6 +139,28 @@ jobs:
           yarn nx run-many -t compile
           yarn verify-pr --recipe-spec ".verify-recipes/pr-${PR_NUMBER}.spec.ts"
 
+      - name: Evidence check (vision)
+        # Runs only when Verify PR succeeded (i.e. initial verdict was
+        # 'verified'). ANTHROPIC_API_KEY is mounted scoped to THIS step only.
+        # The script does not execute LLM-generated code; it submits the
+        # diff + authored spec + screenshot images to claude-haiku-4-5 and
+        # rewrites verify-result.json with {evidenceVerdict, evidenceReasoning,
+        # evidenceModel}. If evidence is 'missing', final verdict is rewritten
+        # to 'evidence-missing' and the label step gates accordingly.
+        if: success()
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2012
+          RESULT=$(ls -t "$PR_HEAD_DIR"/.verify-output/*/verify-result.json | head -1)
+          RECIPE="$PR_HEAD_DIR/.verify-recipes/pr-${PR_NUMBER}.spec.ts"
+          yarn verify-evidence-check \
+            --result "$RESULT" \
+            --diff /tmp/pr.diff \
+            --recipe "$RECIPE"
+
       - name: Read verdict
         id: verdict
         if: always()
@@ -311,7 +333,10 @@ jobs:
                 body = `## Verify Harness\n\nNo verdict produced — the workflow failed before the harness ran (likely recipe-author dispatch, deny-regex, or lint). See [run log](${url}) for details.`;
               } else {
                 const verdict = JSON.parse(fs.readFileSync(resultPath, 'utf-8'));
-                body = `## Verify Harness\n\nVerdict: \`${verdict.verdict}\` (target \`${verdict.template}\`)${verdict.regressionReason ? `\n\nReason: \`${verdict.regressionReason}\`` : ''}\n\nReplay: \`npx playwright show-trace\` on the trace.zip in [artifacts](${url}/artifacts).${renderScreenshots()}`;
+                const evidenceLine = verdict.evidenceVerdict
+                  ? `\n\nEvidence (vision-check, \`${verdict.evidenceModel ?? 'claude-haiku-4-5'}\`): \`${verdict.evidenceVerdict}\`${verdict.evidenceReasoning ? ` — ${verdict.evidenceReasoning}` : ''}`
+                  : '';
+                body = `## Verify Harness\n\nVerdict: \`${verdict.verdict}\` (target \`${verdict.template}\`)${verdict.regressionReason ? `\n\nReason: \`${verdict.regressionReason}\`` : ''}${evidenceLine}\n\nReplay: \`npx playwright show-trace\` on the trace.zip in [artifacts](${url}/artifacts).${renderScreenshots()}`;
               }
             } catch (err) {
               body = `## Verify Harness\n\nError reading verdict: \`${err.message}\`. See [run log](${url}).`;
