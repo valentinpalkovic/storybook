@@ -609,6 +609,29 @@ jobs:
             VERDICT=$(jq -r '.verdict' "$RESULT")
             UNIT_RAN=$(jq -r '.unitTests.ran // false' "$RESULT")
             UNIT_PASSED=$(jq -r '.unitTests.passed // null' "$RESULT")
+            REGRESSION_REASON=$(jq -r '.regressionReason // ""' "$RESULT")
+            # Fill in a regressionReason when Playwright failed but verify-pr
+            # didn't populate one (compile-failure stubs already set their
+            # own reason). Extract the failed test name + first error from
+            # playwright-report.json — reviewers see WHY without needing
+            # the trace.zip.
+            if [ "$VERDICT" = "regression" ] && [ -z "$REGRESSION_REASON" ]; then
+              RUN_DIR=$(dirname "$RESULT")
+              REPORT="$RUN_DIR/playwright-report.json"
+              if [ -f "$REPORT" ]; then
+                DERIVED=$(jq -r '
+                  [.. | objects | select(has("errors") and (.errors | length > 0))] as $failed
+                  | ($failed | map(.title // "?") | unique | .[0:3] | join("; ")) as $titles
+                  | ($failed | .[0].errors[0] | (.message // .stack // tostring)) as $err
+                  | "Playwright assertion failed in: \($titles) — \($err | gsub("\n"; " ") | .[0:400])"
+                ' "$REPORT" 2>/dev/null || true)
+                if [ -n "$DERIVED" ] && [ "$DERIVED" != "null" ] && [ "$DERIVED" != "Playwright assertion failed in:  — null" ]; then
+                  jq --arg reason "$DERIVED" '. + {regressionReason: $reason}' \
+                    "$RESULT" > "$RESULT.tmp" && mv "$RESULT.tmp" "$RESULT"
+                  echo "derived regressionReason: $DERIVED"
+                fi
+              fi
+            fi
             # Compose final verdict from AND of Playwright + unit tests.
             # If Playwright already says regression we keep it (Playwright
             # failure is authoritative). If Playwright passed BUT unit tests
