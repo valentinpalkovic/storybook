@@ -149,10 +149,20 @@ jobs:
         # credential targets even though default reads are allow (extra
         # belt-and-suspenders alongside Layer-1's env stripping). allowWrite
         # covers RUNNER_TEMP (contains PR_HEAD_DIR + .verify-output),
-        # /tmp (chromium scratch + user-data-dir), and HOME/.cache
+        # $SANDBOX_TMPDIR (TMPDIR override, see below), and HOME/.cache
         # (playwright binary cache writes during browser launch).
+        #
+        # CLAUDE_CODE_TMPDIR: srt sets TMPDIR=/tmp/claude inside the
+        # sandbox by default (see anthropic-experimental/sandbox-runtime
+        # src/sandbox/sandbox-utils.ts L320-325). It then `--bind`s host
+        # paths into the sandbox at the same paths — but bwrap doesn't
+        # auto-create them, so if /tmp/claude doesn't exist on the host,
+        # yarn's mktempPromise crashes with ENOENT. Override with a path
+        # under RUNNER_TEMP we pre-create and that's already in allowWrite.
         run: |
           set -euo pipefail
+          SANDBOX_TMPDIR="$RUNNER_TEMP/sandbox-tmp"
+          mkdir -p "$SANDBOX_TMPDIR"
           cat > "$RUNNER_TEMP/srt-settings.json" <<JSON
           {
             "network": {
@@ -164,7 +174,6 @@ jobs:
               "allowRead": [],
               "allowWrite": [
                 "$RUNNER_TEMP",
-                "/tmp",
                 "$HOME/.cache",
                 "$HOME/.local/share"
               ],
@@ -181,6 +190,7 @@ jobs:
           }
           JSON
           echo "SRT_SETTINGS=$RUNNER_TEMP/srt-settings.json" >> "$GITHUB_ENV"
+          echo "CLAUDE_CODE_TMPDIR=$SANDBOX_TMPDIR" >> "$GITHUB_ENV"
           cat "$RUNNER_TEMP/srt-settings.json"
 
       - name: Verify PR
