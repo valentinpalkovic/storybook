@@ -173,6 +173,60 @@ Pick the assertion shape that most directly observes the changed code path. Pref
 
 ---
 
+## 8.1 Evidence requirement (HARD GATE for single-round CI)
+
+In single-round CI mode the assertions + screenshots ARE the evidence the harness reports as "verified". A smoke recipe that asserts unrelated story behaviour is technically passable but **does not verify the diff** — the PR comment will mislead reviewers. Treat this section as a hard authoring gate.
+
+Before emitting the spec, work through the following four questions explicitly:
+
+1. **What does this PR visibly or behaviourally change?** Read the diff carefully. Icon swap, text change, conditional render branch, focus / hover / dark-mode state, addon panel content, sidebar tree, URL params, computed style — all qualify.
+2. **What UI state is required to see the change?** Common gates:
+   - **Conditional render** — e.g. `if (newCount === 0 && modifiedCount === 0) return null`. The element only mounts when its predicate is true. Identify the predicate's inputs and either set them via `page.evaluate(...)` against the manager-api / universal store, set localStorage / sessionStorage keys, or navigate to a route that produces the required state.
+   - **Feature flags** — `globalThis.FEATURES.changeDetection` and similar flags are **enabled by default** in the internal-ui Storybook. The diff itself is the only authoritative source for whether a new flag must be set.
+   - **Theme / dark-mode** — pass `?globals=theme:dark` in the URL or set the theme via `manager-api` once the manager mounts.
+   - **Focus / hover / keyboard-only states** — use `.focus()`, `.hover()`, `page.keyboard.press('Tab')`. Many a11y-related PRs only render their change in these states.
+   - **Specific story route** — when the diff names a specific component, navigate to the story that mounts it, not the generic `example-button--primary`.
+3. **If the trigger state requires filesystem mutation or any other action recipes cannot perform** (deny-regex blocks `fs.*`, `child_process`, `node:*` imports — see §9), state this in a single-line comment in the spec body and fall back to: render the surrounding container, assert `#sb-errordisplay` is hidden, assert `expect(pageErrors).toEqual([])`. Module-resolution and render-time crashes for the changed file will still surface as page errors, which is a meaningful (if narrow) verification signal. **Do NOT claim verification of behaviour you cannot reach** — be explicit in the comment about the limitation.
+4. **Screenshot the region containing the changed UI**, not the whole page. Use `locator.screenshot({ path: testInfo.outputPath('<name>.png') })` against the parent of the changed element (e.g. `.sidebar-container` for sidebar diffs, the addon-panel locator for addon panels, the docs `[role="table"]` for ArgsTable changes). Full-page or generic preview screenshots are acceptable only for layout-wide changes. The PR comment renders every screenshot you attach inline — reviewers should see the change in the image.
+
+### Worked example — focus ring on a selected sidebar item
+
+```ts
+await page.goto(`${baseURL}/?path=/story/example-button--primary`);
+await new RecipePage(page, expect).waitUntilLoaded();
+
+const selected = page.locator(
+  '[data-item-id="example-button--primary"][data-selected="true"]',
+);
+await selected.focus(); // trigger the focus-ring state
+
+await expect(selected).toHaveCSS('box-shadow', /inset.+2px/i);
+
+// Screenshot the sidebar region — the focus ring is visible here:
+await page.locator('.sidebar-container').screenshot({
+  path: testInfo.outputPath('sidebar-focus-ring.png'),
+});
+```
+
+### Worked example — icon swap inside a conditionally-rendered button
+
+```ts
+// ReviewChangesButton only renders when story statuses include NEW or MOD.
+// The internal-ui Storybook does not pre-populate statuses, and recipes
+// cannot mutate the universal-store backing file from inside the test.
+// We therefore verify that the icon module resolves + the manager loads
+// without surfacing a "module not found" or render-time pageerror.
+await page.goto(`${baseURL}/?path=/story/example-button--primary`);
+await new RecipePage(page, expect).waitUntilLoaded();
+
+await expect(page.locator('#sb-errordisplay')).toBeHidden();
+// pageErrors check below is the load-bearing assertion here.
+```
+
+(The closing `expect(pageErrors).toEqual([])` in the standard footer covers the load-bearing assertion.)
+
+---
+
 ## 9. What to AVOID (skill's deny-regex enforces several of these)
 
 | Pattern | Why |
