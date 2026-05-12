@@ -364,6 +364,85 @@ jobs:
           FINAL_EVIDENCE=$(jq -r '.evidenceVerdict // "n/a"' "$NEW_RESULT")
           echo "retry complete — final verdict=$NEW_VERDICT evidence=$FINAL_EVIDENCE"
 
+      - name: Run PR-added unit tests
+        # Complementary verification signal: when the PR ships its own
+        # *.test.{ts,tsx,…} alongside the diff (e.g. PR #16 added
+        # HighlightStyles.test.tsx), run them via vitest. Result is folded
+        # into verify-result.json under `unitTests` — Playwright + unit
+        # tests together give reviewers AND/OR confidence the diff works.
+        # This step does NOT change the existing verdict; the comment
+        # renders unit-test status alongside the Playwright verdict so
+        # they're visible together. A regression in unit tests but a
+        # verified Playwright recipe (or vice versa) is informative on
+        # its own.
+        if: always()
+        working-directory: ${{ runner.temp }}/pr-head
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          NX_NO_CLOUD: 'true'
+          NX_CLOUD_ACCESS_TOKEN: ''
+        run: |
+          set -euo pipefail
+          if ! compgen -G "$PR_HEAD_DIR/.verify-output/*/verify-result.json" >/dev/null; then
+            echo "no verify-result.json — skipping unit-test step"
+            exit 0
+          fi
+          RESULT=$(ls -t "$PR_HEAD_DIR"/.verify-output/*/verify-result.json | head -1)
+
+          # Extract added/modified test files from the captured PR diff.
+          # Pattern matches `*.test.*` and `*.spec.*` under code/ — wide
+          # enough to catch component / utility tests; the workflow has
+          # already declined to run if the PR comment label gate was off.
+          TEST_FILES=()
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            [ -f "$f" ] || continue
+            TEST_FILES+=("$f")
+          done < <(
+            grep -E '^\+\+\+ b/code/.+\.(test|spec)\.(ts|tsx|js|jsx)$' /tmp/pr.diff 2>/dev/null \
+              | sed 's|^+++ b/||' \
+              | sort -u
+          )
+
+          if [ ${#TEST_FILES[@]} -eq 0 ]; then
+            echo "no PR-added unit tests detected — recording n/a"
+            jq '. + {unitTests: {ran: false, files: [], passed: null, summary: "no PR-added test files in diff"}}' \
+              "$RESULT" > "$RESULT.tmp" && mv "$RESULT.tmp" "$RESULT"
+            exit 0
+          fi
+
+          echo "running ${#TEST_FILES[@]} unit test file(s): ${TEST_FILES[*]}"
+          REPORT="$RUNNER_TEMP/unit-tests-report.json"
+
+          # Vitest emits a JSON reporter file when --reporter=json is set.
+          # `set -e` is off for this block so vitest exit codes don't kill
+          # the step; we surface the verdict via JSON inspection.
+          set +e
+          yarn vitest run --reporter=json --outputFile "$REPORT" "${TEST_FILES[@]}" > /tmp/vitest.log 2>&1
+          VITEST_EXIT=$?
+          set -e
+
+          if [ -f "$REPORT" ]; then
+            PASSED=$(jq '.numFailedTests == 0 and .numFailedTestSuites == 0' "$REPORT")
+            SUMMARY=$(jq -r '"\(.numPassedTests) passed, \(.numFailedTests) failed across \(.numTotalTestSuites) suite(s)"' "$REPORT")
+          else
+            PASSED=false
+            SUMMARY="vitest exited $VITEST_EXIT without writing a JSON report (likely setup error); see Action log"
+          fi
+          # Capture the tail of vitest stdout so the comment can show
+          # readable failure output (ANSI-stripped).
+          DETAILS=$(tail -c 4000 /tmp/vitest.log | tr -d '\000' \
+            | sed -E 's/\x1b\[[0-9;]*[A-Za-z]//g' | jq -Rs .)
+
+          jq \
+            --argjson passed "$PASSED" \
+            --arg summary "$SUMMARY" \
+            --argjson files "$(printf '%s\n' "${TEST_FILES[@]}" | jq -R . | jq -s .)" \
+            --argjson details "$DETAILS" \
+            '. + {unitTests: {ran: true, files: $files, passed: $passed, summary: $summary, details: $details}}' \
+            "$RESULT" > "$RESULT.tmp" && mv "$RESULT.tmp" "$RESULT"
+          echo "unit-tests verdict: $SUMMARY (passed=$PASSED, exit=$VITEST_EXIT)"
+
       - name: Read verdict
         id: verdict
         if: always()
@@ -543,7 +622,18 @@ jobs:
                 const detailsBlock = verdict.regressionDetails
                   ? `\n\n<details><summary>Compile output (last 4KB)</summary>\n\n\`\`\`\n${String(verdict.regressionDetails).slice(0, 4000)}\n\`\`\`\n\n</details>`
                   : '';
-                body = `## Verify Harness\n\nVerdict: \`${verdict.verdict}\` (target \`${verdict.template}\`)${verdict.regressionReason ? `\n\nReason: \`${verdict.regressionReason}\`` : ''}${detailsBlock}${evidenceLine}\n\nReplay: \`npx playwright show-trace\` on the trace.zip in [artifacts](${url}/artifacts).${renderScreenshots()}`;
+                let unitTestsLine = '';
+                if (verdict.unitTests && verdict.unitTests.ran) {
+                  const status = verdict.unitTests.passed ? '✅ passed' : '❌ failed';
+                  const filesList = (verdict.unitTests.files ?? [])
+                    .map((f) => `\`${f}\``)
+                    .join(', ');
+                  unitTestsLine = `\n\nPR-added unit tests: ${status} — ${verdict.unitTests.summary || ''}${filesList ? `\n\nFiles: ${filesList}` : ''}`;
+                  if (!verdict.unitTests.passed && verdict.unitTests.details) {
+                    unitTestsLine += `\n\n<details><summary>vitest output (last 4KB)</summary>\n\n\`\`\`\n${String(verdict.unitTests.details).slice(0, 4000)}\n\`\`\`\n\n</details>`;
+                  }
+                }
+                body = `## Verify Harness\n\nVerdict: \`${verdict.verdict}\` (target \`${verdict.template}\`)${verdict.regressionReason ? `\n\nReason: \`${verdict.regressionReason}\`` : ''}${detailsBlock}${evidenceLine}${unitTestsLine}\n\nReplay: \`npx playwright show-trace\` on the trace.zip in [artifacts](${url}/artifacts).${renderScreenshots()}`;
               }
             } catch (err) {
               body = `## Verify Harness\n\nError reading verdict: \`${err.message}\`. See [run log](${url}).`;
