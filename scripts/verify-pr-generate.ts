@@ -308,6 +308,61 @@ function collectRelevantStoryFiles(diffPaths: readonly string[]): string[] {
 }
 
 const STORY_FILE_LINE_CAP = 160;
+const TOUCHED_SOURCE_FILE_LINE_CAP = 250;
+const TOUCHED_SOURCE_FILE_CAP = 4;
+const SOURCE_EXT = /\.(ts|tsx|js|jsx|cjs|mjs)$/;
+const SKIP_SOURCE = /\.(test|spec)\.|__tests__|__mocks__/;
+
+function collectTouchedSourceFiles(diffPaths: readonly string[]): string[] {
+  const matches: string[] = [];
+  for (const rel of diffPaths) {
+    if (!rel.startsWith('code/')) continue;
+    if (STORY_EXT.test(rel)) continue;
+    if (!SOURCE_EXT.test(rel)) continue;
+    if (SKIP_SOURCE.test(rel)) continue;
+    const abs = path.resolve(repoRoot, rel);
+    if (!fs.existsSync(abs)) continue;
+    matches.push(abs);
+    if (matches.length >= TOUCHED_SOURCE_FILE_CAP) break;
+  }
+  return matches;
+}
+
+function renderTouchedSourceFilesSection(filePaths: string[]): string {
+  if (filePaths.length === 0) return '';
+  const blocks = filePaths.map((abs) => {
+    let source: string;
+    try {
+      source = fs.readFileSync(abs, 'utf-8');
+    } catch {
+      return '';
+    }
+    const lines = source.split('\n');
+    const capped = lines.length > TOUCHED_SOURCE_FILE_LINE_CAP;
+    const slice = capped
+      ? lines.slice(0, TOUCHED_SOURCE_FILE_LINE_CAP).join('\n')
+      : source;
+    const trailer = capped
+      ? `\n// ... (${lines.length - TOUCHED_SOURCE_FILE_LINE_CAP} more lines elided)`
+      : '';
+    const rel = path.relative(repoRoot, abs);
+    const fenceLang = rel.endsWith('.tsx') || rel.endsWith('.jsx') ? 'tsx' : 'ts';
+    return `### ${rel}\n\n\`\`\`${fenceLang}\n${slice}${trailer}\n\`\`\``;
+  });
+  const populated = blocks.filter(Boolean);
+  if (populated.length === 0) return '';
+  return [
+    '## Touched source files (full context for the diff)',
+    '',
+    'The PR diff hunks alone often miss the surrounding code that determines',
+    'how to drive the component at runtime (component definitions, conditional',
+    'rendering predicates, aria-labels on toggles, etc). Each file below is the',
+    'CURRENT full source on disk (post-diff state), capped at 250 lines per file.',
+    'Read these to understand selectors / mount conditions before authoring.',
+    '',
+    ...populated,
+  ].join('\n');
+}
 
 function renderStoryRoutesSection(routes: StoryFileRoutes[]): string {
   if (routes.length === 0) return '';
@@ -500,6 +555,11 @@ async function main(argv: string[]): Promise<number> {
   }
   if (storyFileSourcesSection) {
     prompt = `${prompt}\n\n---\n\n${storyFileSourcesSection}`;
+  }
+  const touchedSourceFiles = collectTouchedSourceFiles(prMeta.files.map((f) => f.path));
+  const touchedSourceFilesSection = renderTouchedSourceFilesSection(touchedSourceFiles);
+  if (touchedSourceFilesSection) {
+    prompt = `${prompt}\n\n---\n\n${touchedSourceFilesSection}`;
   }
 
   // Retry-loop context: workflow re-invokes verify-pr-generate with
