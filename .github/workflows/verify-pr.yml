@@ -454,6 +454,19 @@ jobs:
           fi
           if [ -n "$RESULT" ]; then
             VERDICT=$(jq -r '.verdict' "$RESULT")
+            UNIT_RAN=$(jq -r '.unitTests.ran // false' "$RESULT")
+            UNIT_PASSED=$(jq -r '.unitTests.passed // null' "$RESULT")
+            # Compose final verdict from AND of Playwright + unit tests.
+            # If Playwright already says regression we keep it (Playwright
+            # failure is authoritative). If Playwright passed BUT unit tests
+            # ran and failed, downgrade to regression and annotate the
+            # regressionReason so the comment + red-CI signal reflect it.
+            if [ "$VERDICT" = "verified" ] && [ "$UNIT_RAN" = "true" ] && [ "$UNIT_PASSED" = "false" ]; then
+              VERDICT="regression"
+              jq '. + {verdict: "regression", regressionReason: (.regressionReason // "PR-added unit tests failed (see unitTests.details)")}' \
+                "$RESULT" > "$RESULT.tmp" && mv "$RESULT.tmp" "$RESULT"
+              echo "verdict downgraded: Playwright verified but unit tests failed → regression"
+            fi
             echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
             echo "verdict: $VERDICT" >> "$GITHUB_STEP_SUMMARY"
             jq -r '"target=\(.template) regressionReason=\(.regressionReason // "n/a")"' "$RESULT" >> "$GITHUB_STEP_SUMMARY"
