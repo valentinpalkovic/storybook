@@ -135,6 +135,16 @@ jobs:
           NX_CLOUD_ACCESS_TOKEN: ''
         run: |
           set -euo pipefail
+          # Layer-1 security: drop secrets from the env before invoking any
+          # PR-head script. `pull_request_target` runs build / sandbox /
+          # recipe code from the untrusted PR head as the same runner user
+          # that holds GITHUB_TOKEN (contents:write, pull-requests:write,
+          # screenshots-branch push) and the (already step-scoped)
+          # ANTHROPIC_API_KEY. A compromised build script or agent-emitted
+          # recipe could otherwise exfil them. This step doesn't need any
+          # of these secrets — compile + verify-pr only touch localhost +
+          # the PR-head workspace.
+          unset GITHUB_TOKEN GH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
           yarn install --immutable
           # Install the Playwright chromium browser binary on the runner
           # (the GitHub-hosted ubuntu-22.04 image does not pre-bundle
@@ -385,7 +395,13 @@ jobs:
           fi
 
           # Sub-shell so set -e here doesn't kill the outer step on regression.
-          ( cd "$PR_HEAD_DIR" && yarn verify-pr --recipe-spec ".verify-recipes/pr-${PR_NUMBER}.spec.ts" ) || \
+          # Strip secrets from env: this invocation runs the agent-emitted
+          # spec (untrusted), so GITHUB_TOKEN / GH_TOKEN / ANTHROPIC_API_KEY
+          # must not be visible to the subprocess. The trusted scripts
+          # above (verify-pr-generate, verify-pr-author) still see them
+          # because env -u only strips for this single command.
+          ( cd "$PR_HEAD_DIR" && env -u GITHUB_TOKEN -u GH_TOKEN -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN \
+              yarn verify-pr --recipe-spec ".verify-recipes/pr-${PR_NUMBER}.spec.ts" ) || \
             echo "retry verify-pr exited non-zero — evidence-check will still run if verdict==verified"
 
           # shellcheck disable=SC2012
@@ -430,6 +446,11 @@ jobs:
           NX_CLOUD_ACCESS_TOKEN: ''
         run: |
           set -euo pipefail
+          # Layer-1 security: PR-added test files are agent / contributor
+          # content, untrusted under pull_request_target. Strip secrets so
+          # a malicious test file can't read GITHUB_TOKEN /
+          # ANTHROPIC_API_KEY from env. This step doesn't need either.
+          unset GITHUB_TOKEN GH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
           if ! compgen -G "$PR_HEAD_DIR/.verify-output/*/verify-result.json" >/dev/null; then
             echo "no verify-result.json — skipping unit-test step"
             exit 0
