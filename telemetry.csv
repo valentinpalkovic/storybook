@@ -4,3 +4,4 @@ run_id,pr_number,verdict,target,evidence_verdict,evidence_retry,unit_tests_ran,u
 "25744990764","14","regression","internal-ui","n/a","true","false","n/a","23984.643540999998","2026-05-12T15:42:25.440Z"
 "25744990856","17","verified","vue3-vite/default-ts","found","false","false","n/a","17627.702317000003","2026-05-12T15:42:33.225Z"
 "25744990824","15","regression","internal-ui","n/a","false","false","n/a","0","2026-05-12T15:43:23Z"
+"25754231864","20","regression","internal-ui","n/a","true","false","n/a","21791.534186999997","2026-05-12T18:34:10.747Z"
