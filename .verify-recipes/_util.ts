@@ -3,7 +3,8 @@
 // Recipes here are evaluated by Playwright's Node test workers, so anything
 // that requires non-erasable TS is off-limits.
 
-import { test as baseTest, expect, type Expect, type FrameLocator, type Locator, type Page } from '@playwright/test';
+import { test as baseTest, expect as baseExpect } from '@playwright/test';
+import type { Expect, FrameLocator, Locator, Page } from '@playwright/test';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -90,4 +91,4 @@ export const test = baseTest.extend<{ recipeFailureCapture: void }>({
   ],
 });
 
-export { expect };
+export const expect = baseExpect;
