@@ -161,9 +161,10 @@ jobs:
             --diff /tmp/pr.diff \
             --recipe "$RECIPE"
 
-      - name: Retry on evidence missing
-        # Single retry when the first evidence-check ruled 'missing'. Feeds
-        # the vision reasoning back to verify-pr-generate as --retry-context,
+      - name: Retry on evidence missing/undetermined
+        # Single retry when the first evidence-check ruled 'missing' OR
+        # 'undetermined'. Feeds the vision reasoning back to verify-pr-generate
+        # as --retry-context,
         # which appends a "Retry guidance" section to the prompt; the author
         # re-dispatches under the same scoped API key. The retried recipe
         # is materialised at the same PR-head path (overwriting the prior
@@ -184,7 +185,7 @@ jobs:
           # shellcheck disable=SC2012
           RESULT=$(ls -t "$PR_HEAD_DIR"/.verify-output/*/verify-result.json | head -1)
           EVIDENCE=$(jq -r '.evidenceVerdict // "n/a"' "$RESULT")
-          if [ "$EVIDENCE" != "missing" ]; then
+          if [ "$EVIDENCE" != "missing" ] && [ "$EVIDENCE" != "undetermined" ]; then
             echo "evidence verdict is '$EVIDENCE' — no retry needed"
             exit 0
           fi

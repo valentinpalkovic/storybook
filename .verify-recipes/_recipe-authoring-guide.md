@@ -186,7 +186,7 @@ Before emitting the spec, work through the following four questions explicitly:
    - **Theme / dark-mode** — pass `?globals=theme:dark` in the URL or set the theme via `manager-api` once the manager mounts.
    - **Focus / hover / keyboard-only states** — use `.focus()`, `.hover()`, `page.keyboard.press('Tab')`. Many a11y-related PRs only render their change in these states.
    - **Specific story route** — when the diff names a specific component, navigate to the story that mounts it, not the generic `example-button--primary`.
-3. **If the trigger state requires filesystem mutation or any other action recipes cannot perform** (deny-regex blocks `fs.*`, `child_process`, `node:*` imports — see §9), state this in a single-line comment in the spec body and fall back to: render the surrounding container, assert `#sb-errordisplay` is hidden, assert `expect(pageErrors).toEqual([])`. Module-resolution and render-time crashes for the changed file will still surface as page errors, which is a meaningful (if narrow) verification signal. **Do NOT claim verification of behaviour you cannot reach** — be explicit in the comment about the limitation.
+3. **Before deciding the trigger state is unreachable, walk through every affordance listed in the next subsection.** For each one, decide whether it applies to this diff. Most "I can't do this without `fs.*`" assumptions turn out to be wrong because Storybook's own in-app machinery exposes a path: Save from Controls writes story files via csf-tools, `page.evaluate` reaches manager-api setters, URL globals flip theme/args, and so on. **Only after explicitly considering each affordance and rejecting it with a one-sentence reason** may you fall back to: render the surrounding container, assert `#sb-errordisplay` is hidden, assert `expect(pageErrors).toEqual([])`. The bare phrase "working-tree mutation required" is **not** a valid fallback justification — Save from Controls satisfies that exact need without ever touching `fs.*`. The fallback is reserved for cases where (a) the diff is non-visual at all (pure type/logic refactor), or (b) the visible effect depends on env state outside the runner's reach. Either way, state the rejected affordances in the spec comment so a reviewer can audit the reasoning.
 4. **Screenshot the region containing the changed UI**, not the whole page. Use `locator.screenshot({ path: testInfo.outputPath('<name>.png') })` against the parent of the changed element (e.g. `.sidebar-container` for sidebar diffs, the addon-panel locator for addon panels, the docs `[role="table"]` for ArgsTable changes). Full-page or generic preview screenshots are acceptable only for layout-wide changes. The PR comment renders every screenshot you attach inline — reviewers should see the change in the image.
 
 ### Affordances Playwright recipes have for setting up trigger state
@@ -224,22 +224,44 @@ await page.locator('.sidebar-container').screenshot({
 });
 ```
 
-### Worked example — icon swap inside a conditionally-rendered button
+### Worked example — icon swap inside a conditionally-rendered, change-detection-gated button
+
+`ReviewChangesButton` (and its clear button containing the icon under test) only renders when at least one story has status NEW or MOD. We use **Save from Controls** to mutate a story file on the working tree; the change-detection scanner picks the uncommitted edit up and flips the story's status, which causes `ReviewChangesButton` to mount. The recipe never calls `fs.*` directly — Storybook's csf-tools does the write.
 
 ```ts
-// ReviewChangesButton only renders when story statuses include NEW or MOD.
-// The internal-ui Storybook does not pre-populate statuses, and recipes
-// cannot mutate the universal-store backing file from inside the test.
-// We therefore verify that the icon module resolves + the manager loads
-// without surfacing a "module not found" or render-time pageerror.
 await page.goto(`${baseURL}/?path=/story/example-button--primary`);
-await new RecipePage(page, expect).waitUntilLoaded();
+const recipe = new RecipePage(page, expect);
+await recipe.waitUntilLoaded();
 
-await expect(page.locator('#sb-errordisplay')).toBeHidden();
-// pageErrors check below is the load-bearing assertion here.
+// 1. Open the Controls panel and edit a control value.
+const controlsTab = page.getByRole('tab', { name: /controls/i });
+await controlsTab.click();
+const labelInput = page.locator('input[name="label"], textarea[name="label"]').first();
+await labelInput.fill('Verify harness saved this');
+
+// 2. Save from Controls — csf-tools writes the edit back to
+//    code/.storybook/example-button.stories.tsx on the runner's working tree.
+const saveButton = page.getByRole('button', { name: /save/i });
+await saveButton.click();
+// Wait for the save to settle (toast, button state change, or status flip).
+await expect(saveButton).toBeDisabled({ timeout: 5000 }).catch(() => {});
+
+// 3. Change-detection now sees the story as MOD; ReviewChangesButton mounts.
+const reviewToggle = page.getByRole('button', { name: /review.+stories/i });
+await expect(reviewToggle).toBeVisible({ timeout: 10000 });
+
+// 4. Activate review mode so the *clear* button (which carries the diff's icon) renders.
+await reviewToggle.click();
+const clearButton = page.getByRole('button', { name: /clear/i });
+await expect(clearButton).toBeVisible();
+
+// 5. Screenshot the sidebar region — the new UndoIcon is inside the clear button.
+await page.locator('.sidebar-container').screenshot({
+  path: testInfo.outputPath('sidebar-with-clear-button.png'),
+});
 ```
 
-(The closing `expect(pageErrors).toEqual([])` in the standard footer covers the load-bearing assertion.)
+This pattern (Save from Controls → wait for status flip → screenshot the now-visible UI) is the canonical answer for any diff that touches change-detection-gated UI. The closing `expect(pageErrors).toEqual([])` in the standard footer covers module-resolution as a free bonus.
 
 ---
 
