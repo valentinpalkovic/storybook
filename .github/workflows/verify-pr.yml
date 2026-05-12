@@ -163,6 +163,13 @@ jobs:
           set -euo pipefail
           SANDBOX_TMPDIR="$RUNNER_TEMP/sandbox-tmp"
           mkdir -p "$SANDBOX_TMPDIR"
+          # bwrap --bind requires the host source to exist. Pre-create
+          # $HOME/.storybook so Storybook's global settings writes
+          # (~/.storybook/settings.json) don't EROFS inside the sandbox.
+          # Note this is the GLOBAL user-prefs file; workspace .storybook
+          # at $PR_HEAD_DIR/code/.storybook is already covered by the
+          # $RUNNER_TEMP allowWrite entry.
+          mkdir -p "$HOME/.storybook"
           cat > "$RUNNER_TEMP/srt-settings.json" <<JSON
           {
             "network": {
@@ -176,7 +183,8 @@ jobs:
                 "$RUNNER_TEMP",
                 "/tmp",
                 "$HOME/.cache",
-                "$HOME/.local/share"
+                "$HOME/.local/share",
+                "$HOME/.storybook"
               ],
               "denyRead": [
                 "$HOME/.ssh",
