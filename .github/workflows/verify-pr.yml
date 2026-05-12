@@ -22,8 +22,6 @@ jobs:
       issues: write
       statuses: write
       contents: write   # needed to push screenshots to the _verify-screenshots side branch
-    env:
-      PR_HEAD_DIR: ${{ runner.temp }}/pr-head
     steps:
       - name: Check actor permission
         uses: prince-chrismc/check-actor-permissions-action@d504e74ba31658f4cdf4fcfeb509d4c09736d88e # v3.0.2
@@ -39,6 +37,13 @@ jobs:
           install-code-deps: true
       - name: Setup Bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+
+      - name: Compute paths
+        # Export PR_HEAD_DIR via $GITHUB_ENV so every subsequent step can
+        # reference $PR_HEAD_DIR (shell) or ${{ env.PR_HEAD_DIR }} (YAML).
+        # ${{ runner.temp }} is only valid in step contexts, not at job-env
+        # level — this is the canonical workaround.
+        run: echo "PR_HEAD_DIR=${{ runner.temp }}/pr-head" >> "$GITHUB_ENV"
 
       - name: Checkout PR head (untrusted execution context)
         # Manual git clone instead of actions/checkout because the repo carries
