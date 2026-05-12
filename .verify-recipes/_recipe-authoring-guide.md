@@ -311,12 +311,23 @@ the **first non-empty line** of the spec:
 | Target | What the harness boots | Pick when |
 |---|---|---|
 | `internal-ui` (default if header absent) | `code/storybook-static/` served via `http-server`. Built once from the PR-head monorepo. | The diff touches a package that the internal Storybook UI exercises (manager, manager-api, channels, core-server, addons, csf-tools, preview-api). This is the right answer for ~all PRs. |
-| `sandbox:<template>` | `yarn task sandbox --template <template>` + `code/core/dist` symlinked into the sandbox's `node_modules/storybook`. | The diff is template-specific (frameworks/builders/renderers) AND the regression is only reproducible inside a generated sandbox. Rare. |
+| `sandbox:<template>` | `yarn task sandbox --template <template>` + `code/core/dist` symlinked into the sandbox's `node_modules/storybook`. | The diff is template-specific (frameworks/builders/renderers) AND the regression is only reproducible inside a generated sandbox. |
+
+**Strong sandbox-target signals (pick `sandbox:<template>` when):**
+- Diff touches `code/renderers/<r>/template/cli/**` or `code/frameworks/<r>/template/cli/**` — these files only exist inside generated sandboxes; internal-ui never imports them.
+- Diff touches build/runtime code of a non-react renderer or framework (`code/renderers/vue3/src/**`, `code/frameworks/svelte-vite/src/**`, `code/frameworks/nextjs/src/**`, …) where internal-ui has no equivalent story.
+
+Pick the matching template:
+- `code/renderers/vue3/**` or `code/frameworks/vue3-vite/**` → `sandbox:vue3-vite/default-ts`
+- `code/renderers/svelte/**` or `code/frameworks/svelte-vite/**` → `sandbox:svelte-vite/default-ts`
+- `code/frameworks/nextjs/**` → `sandbox:nextjs/default-ts`
+- `code/renderers/react/**` only when internal-ui can't reach the change → `sandbox:react-vite/default-ts`
 
 If you choose `sandbox:<template>`, use a template the repo lists in
-`code/lib/cli-storybook/src/sandbox-templates.ts` — typically
+`code/lib/cli-storybook/src/sandbox-templates.ts`. The workflow allowlists:
 `react-vite/default-ts`, `react-webpack/default-ts`,
-`vue3-vite/default-ts`, or `nextjs/default-ts`.
+`vue3-vite/default-ts`, `svelte-vite/default-ts`,
+`angular-cli/default-ts`, `nextjs/default-ts`.
 
 The header must appear before the first `import` statement. The
 parser scans the first 30 lines; an absent or unrecognised header

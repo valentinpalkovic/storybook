@@ -195,6 +195,33 @@ jobs:
             write_compile_failure_stub "$COMPILE_LOG"
             exit 0
           fi
+          # If the recipe targets a sandbox (`// @verify-target: sandbox:<template>`),
+          # generate it before verify-pr boots Storybook. Sandboxes live at
+          # `$RUNNER_TEMP/storybook-sandboxes/<key>` (yarn task sandbox's
+          # default `../storybook-sandboxes` relative to repo root); that's
+          # the third candidate verify-pr's resolveSandboxDir checks. Cap
+          # template choice to a small allowlist to keep CI bounded.
+          SPEC=".verify-recipes/pr-${PR_NUMBER}.spec.ts"
+          if [ -f "$SPEC" ]; then
+            HEADER=$(grep -E '^// @verify-target:' "$SPEC" | head -1 || true)
+            TARGET=$(echo "$HEADER" | sed -E 's|.*@verify-target:[[:space:]]*||;s|[[:space:]]+$||')
+            case "$TARGET" in
+              sandbox:*)
+                TEMPLATE="${TARGET#sandbox:}"
+                case "$TEMPLATE" in
+                  react-vite/default-ts|react-webpack/default-ts|vue3-vite/default-ts|svelte-vite/default-ts|angular-cli/default-ts|nextjs/default-ts)
+                    echo "[verify] spec targets sandbox '$TEMPLATE' — generating"
+                    yarn task sandbox --template "$TEMPLATE" --start-from auto --no-link
+                    ;;
+                  *)
+                    echo "[verify] sandbox template '$TEMPLATE' is not allowlisted; skipping generation. verify-pr will fail with a clear resolveSandboxDir error."
+                    ;;
+                esac
+                ;;
+              *) echo "[verify] target='${TARGET:-internal-ui}' — skipping sandbox generation" ;;
+            esac
+          fi
+
           # Swallow non-zero exit so downstream Evidence-check / Retry steps
           # always run. Final verdict gate at end of job ("Fail job if final
           # verdict is regression") preserves red-CI signal based on the
