@@ -178,48 +178,68 @@ jobs:
             echo "[verify] compile failure — wrote stub verdict to $out_dir/verify-result.json"
           }
           COMPILE_LOG="$RUNNER_TEMP/verify-compile.log"
-          # Compile core FIRST so eslint-plugin's prebuild script (which
-          # imports from `storybook/csf` via jiti) can resolve
-          # `storybook/dist/csf/index.js`. nx run-many parallelises by
-          # default and does not topo-order compile targets unless an
-          # explicit `dependsOn: ["^compile"]` is set, which the repo
-          # currently lacks for the eslint-plugin chain.
-          if ! yarn nx compile core 2>&1 | tee "$COMPILE_LOG"; then
-            write_compile_failure_stub "$COMPILE_LOG"
-            exit 0
-          fi
-          # Then compile every other NX project so the internal-ui dev
-          # server can resolve @storybook/react-vite + every addon
-          # listed in code/.storybook/main.ts.
-          if ! yarn nx run-many -t compile 2>&1 | tee "$COMPILE_LOG"; then
-            write_compile_failure_stub "$COMPILE_LOG"
-            exit 0
-          fi
-          # If the recipe targets a sandbox (`// @verify-target: sandbox:<template>`),
-          # generate it before verify-pr boots Storybook. Sandboxes live at
-          # `$RUNNER_TEMP/storybook-sandboxes/<key>` (yarn task sandbox's
-          # default `../storybook-sandboxes` relative to repo root); that's
-          # the third candidate verify-pr's resolveSandboxDir checks. Cap
-          # template choice to a small allowlist to keep CI bounded.
+          # Pick the prep path based on the recipe's @verify-target header.
+          # internal-ui: needs `nx compile core` (so `code/core/dist/bin/
+          # dispatcher.js` exists for bootInternalUi) plus the rest of the
+          # workspace compiled so the dev server can resolve every addon /
+          # framework `code/.storybook/main.ts` imports.
+          # sandbox:<tpl>: `nx run <tpl>:sandbox` handles all compile deps
+          # via the project's implicitDependencies + emits the sandbox dir
+          # at `code/sandbox/<key>` (verify-pr's resolveSandboxDir checks
+          # this path before falling through to `../storybook-sandboxes`).
+          # `yarn task sandbox` is the legacy wrapper that re-runs the
+          # global `compile` target before invoking `:sandbox`, so it
+          # double-compiles for no benefit on CI — drop it.
           SPEC=".verify-recipes/pr-${PR_NUMBER}.spec.ts"
+          TARGET="internal-ui"
+          TEMPLATE=""
           if [ -f "$SPEC" ]; then
             HEADER=$(grep -E '^// @verify-target:' "$SPEC" | head -1 || true)
-            TARGET=$(echo "$HEADER" | sed -E 's|.*@verify-target:[[:space:]]*||;s|[[:space:]]+$||')
-            case "$TARGET" in
+            CANDIDATE=$(echo "$HEADER" | sed -E 's|.*@verify-target:[[:space:]]*||;s|[[:space:]]+$||')
+            case "$CANDIDATE" in
               sandbox:*)
-                TEMPLATE="${TARGET#sandbox:}"
+                TEMPLATE="${CANDIDATE#sandbox:}"
                 case "$TEMPLATE" in
                   react-vite/default-ts|react-webpack/default-ts|vue3-vite/default-ts|svelte-vite/default-ts|angular-cli/default-ts|nextjs/default-ts)
-                    echo "[verify] spec targets sandbox '$TEMPLATE' — generating"
-                    yarn task sandbox --template "$TEMPLATE" --start-from auto --no-link
+                    TARGET="sandbox"
                     ;;
                   *)
-                    echo "[verify] sandbox template '$TEMPLATE' is not allowlisted; skipping generation. verify-pr will fail with a clear resolveSandboxDir error."
+                    echo "[verify] sandbox template '$TEMPLATE' is not allowlisted; falling back to internal-ui prep (verify-pr will still emit a clear error)."
+                    TEMPLATE=""
                     ;;
                 esac
                 ;;
-              *) echo "[verify] target='${TARGET:-internal-ui}' — skipping sandbox generation" ;;
             esac
+          fi
+
+          if [ "$TARGET" = "sandbox" ]; then
+            echo "[verify] spec targets sandbox '$TEMPLATE' — running 'nx run $TEMPLATE:sandbox'"
+            # The `:sandbox` target resolves implicitDependencies (core,
+            # cli, addons, the framework package) and generates the
+            # sandbox project under code/sandbox/<key>. No extra
+            # `nx compile core` / `run-many` needed — nx topo-orders deps
+            # itself.
+            if ! yarn nx run "$TEMPLATE:sandbox" 2>&1 | tee "$COMPILE_LOG"; then
+              write_compile_failure_stub "$COMPILE_LOG"
+              exit 0
+            fi
+          else
+            # internal-ui path. Compile core first (eslint-plugin's
+            # prebuild script imports `storybook/csf` via jiti and needs
+            # `storybook/dist/csf/index.js` to resolve; nx run-many does
+            # not topo-order this unless `dependsOn: ["^compile"]` is set,
+            # which the repo currently lacks for the eslint-plugin chain).
+            if ! yarn nx compile core 2>&1 | tee "$COMPILE_LOG"; then
+              write_compile_failure_stub "$COMPILE_LOG"
+              exit 0
+            fi
+            # Then compile every other NX project so the internal-ui dev
+            # server can resolve @storybook/react-vite + every addon
+            # listed in code/.storybook/main.ts.
+            if ! yarn nx run-many -t compile 2>&1 | tee "$COMPILE_LOG"; then
+              write_compile_failure_stub "$COMPILE_LOG"
+              exit 0
+            fi
           fi
 
           # Swallow non-zero exit so downstream Evidence-check / Retry steps
