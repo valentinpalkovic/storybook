@@ -646,7 +646,7 @@ jobs:
                     unitTestsLine += `\n\n<details><summary>vitest output (last 4KB)</summary>\n\n\`\`\`\n${String(verdict.unitTests.details).slice(0, 4000)}\n\`\`\`\n\n</details>`;
                   }
                 }
-                body = `## Verify Harness\n\nVerdict: \`${verdict.verdict}\` (target \`${verdict.template}\`)${verdict.regressionReason ? `\n\nReason: \`${verdict.regressionReason}\`` : ''}${detailsBlock}${evidenceLine}${unitTestsLine}\n\nReplay: \`npx playwright show-trace\` on the trace.zip in [artifacts](${url}/artifacts).${renderScreenshots()}`;
+                body = `## Verify Harness\n\nVerdict: \`${verdict.verdict}\` (target \`${verdict.template}\`)${verdict.regressionReason ? `\n\nReason: \`${verdict.regressionReason}\`` : ''}${detailsBlock}${evidenceLine}${unitTestsLine}\n\nReplay: \`npx playwright show-trace\` on the trace.zip listed under "Artifacts" on the [run summary page](${url}).${renderScreenshots()}`;
               }
             } catch (err) {
               body = `## Verify Harness\n\nError reading verdict: \`${err.message}\`. See [run log](${url}).`;
