@@ -46,6 +46,7 @@ import {
 } from '../../utils/tree.ts';
 import { useLayout } from '../layout/LayoutProvider.tsx';
 import { useContextMenu } from './ContextMenu.tsx';
+import { UseSymbol } from './IconSymbols.tsx';
 import { StatusButton } from './StatusButton.tsx';
 import { StatusContext } from './StatusContext.tsx';
 import {
@@ -237,15 +238,13 @@ const Node = React.memo<NodeProps>(function Node(props) {
     const LeafNode = item.type === 'docs' ? DocumentNode : StoryLeafNode;
 
     const { changeStatus, testStatus } = getChangeDetectionStatus(statuses || {});
-    const leafChangeIcon =
-      changeStatus === 'status-value:unknown' ||
-      changeStatus === 'status-value:affected' ||
-      (changeStatus === 'status-value:modified' && !isModifiedFilterActive)
-        ? null
-        : getStatus(theme, changeStatus).icon;
-    const { icon: testIcon } = getStatus(theme, testStatus);
-    const overallStoryStatus = getMostCriticalStatusValue([changeStatus, testStatus]);
-    const { textColor } = getStatus(theme, overallStoryStatus);
+    // Show test statuses and "new" change detection status at the story level;
+    // other change detection statuses appear at the branch/component level instead
+    const storyStatus =
+      changeStatus === 'status-value:new'
+        ? getMostCriticalStatusValue([changeStatus, testStatus])
+        : testStatus;
+    const { icon: testIcon, textColor } = getStatus(theme, storyStatus);
 
     return (
       <LeafNodeStyleWrapper
@@ -284,43 +283,12 @@ const Node = React.memo<NodeProps>(function Node(props) {
           </SkipToContentLink>
         )}
         {contextMenu.node}
-        {leafChangeIcon && testIcon ? (
-          <StatusSlots>
-            <StatusButton
-              ariaLabel={`Change status: ${getStatusLabel(changeStatus)}`}
-              data-testid="tree-change-status-button"
-              type="button"
-              status={changeStatus}
-              selectedItem={isSelected}
-            >
-              {leafChangeIcon}
-            </StatusButton>
-            <StatusButton
-              ariaLabel={`Test status: ${getStatusLabel(testStatus)}`}
-              data-testid="tree-status-button"
-              type="button"
-              status={testStatus}
-              selectedItem={isSelected}
-            >
-              {testIcon}
-            </StatusButton>
-          </StatusSlots>
-        ) : leafChangeIcon ? (
+        {testIcon ? (
           <StatusButton
-            ariaLabel={`Change status: ${getStatusLabel(changeStatus)}`}
-            data-testid="tree-change-status-button"
-            type="button"
-            status={changeStatus}
-            selectedItem={isSelected}
-          >
-            {leafChangeIcon}
-          </StatusButton>
-        ) : testIcon ? (
-          <StatusButton
-            ariaLabel={`Test status: ${getStatusLabel(testStatus)}`}
+            ariaLabel={`${storyStatus === testStatus ? 'Test status' : 'Status'}: ${getStatusLabel(storyStatus)}`}
             data-testid="tree-status-button"
             type="button"
-            status={testStatus}
+            status={storyStatus}
             selectedItem={isSelected}
           >
             {testIcon}
@@ -401,7 +369,12 @@ const Node = React.memo<NodeProps>(function Node(props) {
     const branchChangeIcon = shouldShowBranchChangeIcon
       ? getStatus(theme, branchChange).icon
       : null;
-    const branchTestIcon = getStatus(theme, branchTest).icon;
+    const branchTestIcon =
+      branchTest === 'status-value:error' || branchTest === 'status-value:warning' ? (
+        <svg key="icon" viewBox="0 0 6 6" width="6" height="6" type="dot">
+          <UseSymbol type="dot" />
+        </svg>
+      ) : null;
 
     const overallStatus = getMostCriticalStatusValue([branchChange, branchTest]);
     const color = overallStatus ? getStatus(theme, overallStatus).textColor : null;

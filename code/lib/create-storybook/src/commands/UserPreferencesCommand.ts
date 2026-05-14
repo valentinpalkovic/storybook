@@ -13,7 +13,6 @@ import picocolors from 'picocolors';
 import { dedent } from 'ts-dedent';
 
 import type { CommandOptions } from '../generators/types.ts';
-import { createPromptCancelOptions } from '../prompt-cancel.ts';
 import { FeatureCompatibilityService } from '../services/FeatureCompatibilityService.ts';
 import { TelemetryService } from '../services/TelemetryService.ts';
 
@@ -121,22 +120,19 @@ export class UserPreferencesCommand {
       settings.value.init ||= {};
       settings.value.init.skipOnboarding = !!skipOnboarding;
     } else {
-      isNewUser = await prompt.select(
-        {
-          message: 'New to Storybook?',
-          options: [
-            {
-              label: `${picocolors.bold('Yes:')} Help me with onboarding`,
-              value: true,
-            },
-            {
-              label: `${picocolors.bold('No:')} Skip onboarding & don't ask again`,
-              value: false,
-            },
-          ],
-        },
-        createPromptCancelOptions(this.telemetryService, 'new-user-ask-onboarding')
-      );
+      isNewUser = await prompt.select({
+        message: 'New to Storybook?',
+        options: [
+          {
+            label: `${picocolors.bold('Yes:')} Help me with onboarding`,
+            value: true,
+          },
+          {
+            label: `${picocolors.bold('No:')} Skip onboarding & don't ask again`,
+            value: false,
+          },
+        ],
+      });
 
       settings.value.init ||= {};
       settings.value.init.skipOnboarding = !isNewUser;
@@ -167,22 +163,19 @@ export class UserPreferencesCommand {
       : `Recommended: Component development and docs`;
 
     if (!skipPrompt) {
-      installType = await prompt.select(
-        {
-          message: 'What configuration should we install?',
-          options: [
-            {
-              label: recommendedLabel,
-              value: 'recommended',
-            },
-            {
-              label: `Minimal: Just the essentials for component development.`,
-              value: 'light',
-            },
-          ],
-        },
-        createPromptCancelOptions(this.telemetryService, 'install-type')
-      );
+      installType = await prompt.select({
+        message: 'What configuration should we install?',
+        options: [
+          {
+            label: recommendedLabel,
+            value: 'recommended',
+          },
+          {
+            label: `Minimal: Just the essentials for component development.`,
+            value: 'light',
+          },
+        ],
+      });
     }
 
     await this.telemetryService.trackInstallType(installType);
@@ -232,12 +225,9 @@ export class UserPreferencesCommand {
   private async promptAiSetup(skipPrompt: boolean): Promise<boolean> {
     const useAi = skipPrompt
       ? true
-      : await prompt.confirm(
-          {
-            message: 'Would you like to install AI features (MCP addon and prompt suggestions)?',
-          },
-          createPromptCancelOptions(this.telemetryService, 'ai-setup')
-        );
+      : await prompt.confirm({
+          message: 'Would you like to install AI features (MCP addon and prompt suggestions)?',
+        });
 
     if (useAi) {
       await this.telemetryService.trackAiSetupNudge({ skipPrompt });

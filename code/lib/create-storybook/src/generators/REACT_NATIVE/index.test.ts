@@ -5,7 +5,6 @@ import { logger } from 'storybook/internal/node-logger';
 import { SupportedLanguage } from 'storybook/internal/types';
 
 import { DependencyCollector } from '../../dependency-collector.ts';
-import { TelemetryService } from '../../services/TelemetryService.ts';
 import reactNativeGenerator from './index.ts';
 import { generateReactNativeEntrypoint } from './generateEntrypoint.ts';
 import { runMetroCodemodOrFallback } from './metroConfig.ts';
@@ -17,7 +16,6 @@ vi.mock('./generateEntrypoint', { spy: true });
 vi.mock('./metroConfig', { spy: true });
 
 describe('REACT_NATIVE generator module', () => {
-  const telemetryService = new TelemetryService();
   const createPackageManager = (scripts?: Record<string, string>) =>
     ({
       getDependencyVersion: vi.fn().mockReturnValue(null),
@@ -58,7 +56,6 @@ describe('REACT_NATIVE generator module', () => {
       renderer: reactNativeGenerator.metadata.renderer,
       builder: reactNativeGenerator.metadata.builderOverride as any,
       language: SupportedLanguage.JAVASCRIPT,
-      telemetryService,
       features: new Set(),
       dependencyCollector: new DependencyCollector(),
       yes: true,
@@ -90,7 +87,6 @@ describe('REACT_NATIVE generator module', () => {
       renderer: reactNativeGenerator.metadata.renderer,
       builder: reactNativeGenerator.metadata.builderOverride as any,
       language: SupportedLanguage.TYPESCRIPT,
-      telemetryService,
       features: new Set(),
       dependencyCollector: new DependencyCollector(),
       yes: true,
@@ -115,7 +111,6 @@ describe('REACT_NATIVE generator module', () => {
       renderer: reactNativeGenerator.metadata.renderer,
       builder: reactNativeGenerator.metadata.builderOverride as any,
       language: SupportedLanguage.JAVASCRIPT,
-      telemetryService,
       features: new Set(),
       dependencyCollector: new DependencyCollector(),
       yes: true,
@@ -138,7 +133,6 @@ describe('REACT_NATIVE generator module', () => {
       renderer: reactNativeGenerator.metadata.renderer,
       builder: reactNativeGenerator.metadata.builderOverride as any,
       language: SupportedLanguage.JAVASCRIPT,
-      telemetryService,
       features: new Set(),
       dependencyCollector: new DependencyCollector(),
       yes: true,
@@ -169,7 +163,6 @@ describe('REACT_NATIVE generator module', () => {
       renderer: reactNativeGenerator.metadata.renderer,
       builder: reactNativeGenerator.metadata.builderOverride as any,
       language: SupportedLanguage.JAVASCRIPT,
-      telemetryService,
       features: new Set(),
       dependencyCollector: new DependencyCollector(),
       yes: true,

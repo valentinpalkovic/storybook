@@ -78,21 +78,15 @@ export async function initializeChecklist(
         }) satisfies StoreState
     );
 
-    // AI setup run and AI optin flags (set in `ai setup` and `init`respectively).
+    // AI opt-in flag (set in `init` when user accepted the AI feature).
     // Read from the regular fs cache — NOT from the telemetry event cache
     // so the copy-prompt button appears for users who disabled telemetry.
     // Fire-and-forget so the store is never blocked waiting for this check.
-    hasAiSetupRun(configDir!)
-      .then((hasSetupRun) => {
-        if (hasSetupRun) {
-          store.setState((state) => ({ ...state, aiSetupRun: true }));
-        }
-      })
-      .catch(() => {});
-
     hasAiInitOptIn(configDir!)
       .then((hasOptedIn) => {
-        store.setState((state) => ({ ...state, aiOptIn: hasOptedIn }));
+        if (hasOptedIn) {
+          store.setState((state) => ({ ...state, aiOptIn: true }));
+        }
       })
       .catch(() => {});
 
@@ -176,8 +170,7 @@ export async function initializeChecklist(
       throttledSyncAiSetupStatus();
       clearTimeout(analyticsTimer);
       analyticsTimer = setTimeout(async () => {
-        // If the CLI command never ran, don't emit analytics or ghost stories.
-        if (!store.getState().aiSetupRun) {
+        if (!store.getState().aiOptIn) {
           return;
         }
         // Agents often run `npx vitest` for many minutes. If a recent

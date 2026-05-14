@@ -9,7 +9,6 @@ import { SupportedBuilder, SupportedFramework, SupportedRenderer } from 'storybo
 
 import { dedent } from 'ts-dedent';
 
-import { createPromptCancelOptions } from '../../prompt-cancel.ts';
 import { defineGeneratorModule } from '../modules/GeneratorModule.ts';
 
 const NEXT_CONFIG_FILES = [
@@ -40,7 +39,7 @@ export default defineGeneratorModule({
         ? SupportedFramework.NEXTJS_VITE
         : SupportedFramework.NEXTJS;
     },
-    builderOverride: async ({ telemetryService }) => {
+    builderOverride: async () => {
       const nextConfigFile = findFilesUp(NEXT_CONFIG_FILES, process.cwd())[0];
       if (!nextConfigFile) {
         return SupportedBuilder.VITE;
@@ -70,16 +69,14 @@ export default defineGeneratorModule({
 
           However, your project has a ${reason}, which is not supported by nextjs-vite, so please be aware of that if you choose that option.
         `);
-        return prompt.select(
-          {
-            message: 'Which framework would you like to use?',
-            options: [
-              { label: '@storybook/nextjs-vite', value: SupportedBuilder.VITE },
-              { label: '@storybook/nextjs (Webpack)', value: SupportedBuilder.WEBPACK5 },
-            ],
-          },
-          createPromptCancelOptions(telemetryService, 'nextjs-builder')
-        );
+
+        return prompt.select({
+          message: 'Which framework would you like to use?',
+          options: [
+            { label: '@storybook/nextjs-vite', value: SupportedBuilder.VITE },
+            { label: '@storybook/nextjs (Webpack)', value: SupportedBuilder.WEBPACK5 },
+          ],
+        });
       }
     },
   },

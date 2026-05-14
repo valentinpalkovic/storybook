@@ -12,10 +12,8 @@ export type ChecklistState = NonNullable<
 export type StoreState = Required<Omit<ChecklistState, 'items'>> & {
   items: NonNullable<Required<ChecklistState['items']>>;
   loaded?: boolean;
-  /** True unless the user opted out from AI during `storybook init`. Set by the server from the event cache. Treat empty values as true.*/
+  /** True when the user opted into AI during `storybook init`. Set by the server from the event cache. */
   aiOptIn?: boolean;
-  /** True when the user ran the AI setup at some point in the past. Treat empty values as false.*/
-  aiSetupRun?: boolean;
 };
 
 export type ItemId = keyof StoreState['items'];

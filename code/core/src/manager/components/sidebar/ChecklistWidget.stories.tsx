@@ -98,7 +98,6 @@ export const Narrow = meta.story({
 const withAiSetupState = {
   loaded: true,
   aiOptIn: true,
-  aiSetupRun: true,
   widget: {},
   items: {
     ...initialState.items,

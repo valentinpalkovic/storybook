@@ -510,9 +510,8 @@ export const WithModified: Story = {
   ),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    // modified filter is active — icon should be visible at story leaf and parent branch
-    const buttons = await canvas.findAllByTestId('tree-change-status-button');
-    await expect(buttons.length).toBeGreaterThanOrEqual(1);
+    // modified filter is active — icon should be visible
+    await expect(canvas.queryByTestId('tree-change-status-button')).toBeInTheDocument();
   },
 };
 
@@ -535,8 +534,7 @@ export const WithNew: Story = {
   }),
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    // new status is always shown at both leaf and branch levels
-    const buttons = await canvas.findAllByTestId('tree-change-status-button');
-    await expect(buttons.length).toBeGreaterThanOrEqual(1);
+    // new status is always shown — icon should be present regardless of filters
+    await expect(canvas.queryByTestId('tree-change-status-button')).toBeInTheDocument();
   },
 };

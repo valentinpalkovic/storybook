@@ -1,9 +1,5 @@
 <script>
-  /*
-  ! DO NOT change this DecoratorHandler import to a relative path, it will break it.
-  ! See https://github.com/storybookjs/storybook/issues/34304
-  */
-  import DecoratorHandler from '@storybook/svelte/internal/DecoratorHandler.svelte';
+  import DecoratorHandler from './DecoratorHandler.svelte';
   import { dedent } from 'ts-dedent';
 
   const { name, title, storyFn, showError } = $props();

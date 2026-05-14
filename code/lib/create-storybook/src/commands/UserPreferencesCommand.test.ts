@@ -22,7 +22,6 @@ interface CommandWithPrivates {
     trackNewUserCheck: ReturnType<typeof vi.fn>;
     trackInstallType: ReturnType<typeof vi.fn>;
     trackAiSetupNudge: ReturnType<typeof vi.fn>;
-    trackPromptCancel: ReturnType<typeof vi.fn>;
   };
 }
 
@@ -77,8 +76,6 @@ describe('UserPreferencesCommand', () => {
       return {
         trackNewUserCheck: vi.fn(),
         trackInstallType: vi.fn(),
-        trackAiSetupNudge: vi.fn(),
-        trackPromptCancel: vi.fn().mockResolvedValue(undefined),
       };
     });
 
@@ -97,7 +94,6 @@ describe('UserPreferencesCommand', () => {
       trackNewUserCheck: vi.fn(),
       trackInstallType: vi.fn(),
       trackAiSetupNudge: vi.fn(),
-      trackPromptCancel: vi.fn().mockResolvedValue(undefined),
     };
 
     // Inject mocked services
@@ -154,34 +150,11 @@ describe('UserPreferencesCommand', () => {
       expect(prompt.select).toHaveBeenCalledWith(
         expect.objectContaining({
           message: 'New to Storybook?',
-        }),
-        expect.objectContaining({ onCancel: expect.any(Function) })
+        })
       );
       expect(result.newUser).toBe(true);
       const telemetryService = (command as unknown as CommandWithPrivates).telemetryService;
       expect(telemetryService.trackNewUserCheck).toHaveBeenCalledWith(true);
-    });
-
-    it('should track prompt cancellation for the new user prompt and exit cleanly', async () => {
-      Object.defineProperty(process.stdout, 'isTTY', {
-        value: true,
-        configurable: true,
-      });
-
-      vi.mocked(prompt.select).mockResolvedValueOnce(true);
-
-      await command.execute(defaultExecuteOptions);
-
-      const onCancel = vi.mocked(prompt.select).mock.calls[0]?.[1]?.onCancel;
-      const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
-
-      await onCancel?.();
-
-      const telemetryService = (command as unknown as CommandWithPrivates).telemetryService;
-      expect(telemetryService.trackPromptCancel).toHaveBeenCalledWith('new-user-ask-onboarding');
-      expect(exitSpy).toHaveBeenCalledWith(0);
-
-      exitSpy.mockRestore();
     });
 
     it('should prompt for install type when not a new user', async () => {
@@ -263,8 +236,7 @@ describe('UserPreferencesCommand', () => {
           message: expect.stringContaining(
             'Would you like to install AI features (MCP addon and prompt suggestions)?'
           ),
-        }),
-        expect.objectContaining({ onCancel: expect.any(Function) })
+        })
       );
       expect(result.selectedFeatures.has(Feature.AI)).toBe(true);
     });
@@ -365,7 +337,6 @@ describe('UserPreferencesCommand', () => {
         trackNewUserCheck: vi.fn(),
         trackInstallType: vi.fn(),
         trackAiSetupNudge: vi.fn(),
-        trackPromptCancel: vi.fn().mockResolvedValue(undefined),
       };
 
       const result = await yesCommand.execute({

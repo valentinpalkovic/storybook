@@ -22,8 +22,6 @@ import { cache } from 'storybook/internal/common';
 interface ProjectScopedFlag {
   timestamp: number;
   configDir: string;
-  // only on ai-init-opt-in
-  answer?: boolean;
   // only on ai-setup-ran
   runId?: string;
 }
@@ -49,10 +47,9 @@ async function readProjectScopedFlag(
   } catch {}
 }
 
-/** Written by `storybook init` when the user accepted the AI feature and in legacy inits where the question was not asked. */
+/** Written by `storybook init` when the user accepted the AI feature. */
 export async function hasAiInitOptIn(configDir: string): Promise<boolean> {
-  const flag = await readProjectScopedFlag('ai-init-opt-in', configDir);
-  return flag?.answer !== false;
+  return !!(await readProjectScopedFlag('ai-init-opt-in', configDir));
 }
 
 /** Written by `storybook ai setup` when the prompt CLI ran in this project. */

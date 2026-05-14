@@ -217,7 +217,7 @@ describe('initializeChecklist', () => {
   });
 
   describe('aiOptIn flag', () => {
-    it('flips aiOptIn to match the value found in the regular fs cache (true case)', async () => {
+    it('flips aiOptIn=true when the regular fs cache has it (telemetry-disabled path)', async () => {
       const { get: getEventCacheEntry } = await import('../../telemetry/event-cache.ts');
       vi.mocked(getEventCacheEntry).mockResolvedValue(undefined);
       await setAiFlags({ optedIn: true });
@@ -229,33 +229,7 @@ describe('initializeChecklist', () => {
       expect(mockStore.getState().aiOptIn).toBe(true);
     });
 
-    it('flips aiOptIn to match the value found in the regular fs cache (false case)', async () => {
-      const { get: getEventCacheEntry } = await import('../../telemetry/event-cache.ts');
-      vi.mocked(getEventCacheEntry).mockResolvedValue(undefined);
-      await setAiFlags({ optedIn: false });
-
-      const { initializeChecklist } = await import('./checklist.ts');
-      await initializeChecklist(undefined, undefined, '/p');
-      await vi.advanceTimersByTimeAsync(0);
-
-      expect(mockStore.getState().aiOptIn).toBe(false);
-    });
-  });
-
-  describe('aiSetupRun flag', () => {
-    it('flips aiSetupRun=true when the regular fs cache has it (telemetry-disabled path)', async () => {
-      const { get: getEventCacheEntry } = await import('../../telemetry/event-cache.ts');
-      vi.mocked(getEventCacheEntry).mockResolvedValue(undefined);
-      await setAiFlags({ setupRan: true });
-
-      const { initializeChecklist } = await import('./checklist.ts');
-      await initializeChecklist(undefined, undefined, '/p');
-      await vi.advanceTimersByTimeAsync(0);
-
-      expect(mockStore.getState().aiSetupRun).toBe(true);
-    });
-
-    it('keeps aiSetupRun=false when cache does not have the flag', async () => {
+    it('keeps aiOptIn=false when cache does not have the flag', async () => {
       const { get: getEventCacheEntry } = await import('../../telemetry/event-cache.ts');
       vi.mocked(getEventCacheEntry).mockResolvedValue(undefined);
 
@@ -263,7 +237,7 @@ describe('initializeChecklist', () => {
       await initializeChecklist();
       await vi.advanceTimersByTimeAsync(0);
 
-      expect(mockStore.getState().aiSetupRun).toBeFalsy();
+      expect(mockStore.getState().aiOptIn).toBeFalsy();
     });
   });
 
@@ -383,7 +357,7 @@ describe('initializeChecklist', () => {
       expect(channel.emit).toHaveBeenCalledWith(AI_SETUP_ANALYTICS_REQUEST);
     });
 
-    it('emits even if user did not opt into AI', async () => {
+    it('does not emit if user did not opt into AI', async () => {
       const { AI_SETUP_ANALYTICS_REQUEST, GHOST_STORIES_REQUEST, STORY_INDEX_INVALIDATED } =
         await import('storybook/internal/core-events');
       const { get: getEventCacheEntry } = await import('../../telemetry/event-cache.ts');
@@ -400,8 +374,8 @@ describe('initializeChecklist', () => {
       listeners[STORY_INDEX_INVALIDATED]?.forEach((fn) => fn());
       await vi.advanceTimersByTimeAsync(AI_IDLE_DELAY_MS);
 
-      expect(channel.emit).toHaveBeenCalledWith(AI_SETUP_ANALYTICS_REQUEST);
-      expect(channel.emit).toHaveBeenCalledWith(GHOST_STORIES_REQUEST);
+      expect(channel.emit).not.toHaveBeenCalledWith(AI_SETUP_ANALYTICS_REQUEST);
+      expect(channel.emit).not.toHaveBeenCalledWith(GHOST_STORIES_REQUEST);
     });
 
     it('only emits once even after multiple idle cycles', async () => {
