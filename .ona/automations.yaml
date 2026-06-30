@@ -1,0 +1,31 @@
+tasks:
+  install-dependencies:
+    name: Install dependencies
+    command: |
+      corepack enable
+      yarn install --immutable
+    triggeredBy:
+      - manual
+      - postDevcontainerStart
+      - prebuild
+
+  build:
+    name: Build
+    command: yarn task compile
+    dependsOn:
+      - install-dependencies
+    triggeredBy:
+      - manual
+
+services:
+  storybook-ui:
+    name: Internal Storybook UI
+    commands:
+      start: |
+        gitpod environment port open 6006 --dont-wait --admission creator_only --name "Internal Storybook UI" --protocol http
+        cd code
+        yarn storybook:ui --host 0.0.0.0
+      ready: curl -sf http://localhost:6006
+    triggeredBy:
+      - manual
+      - postEnvironmentStart
