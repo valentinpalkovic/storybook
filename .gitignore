@@ -90,5 +90,8 @@ scripts/eval/results
 # review-pr skill output
 .pr-review
 
+# verify-pr harness output
+.verify-output
+
 # Unknown
 .omc
